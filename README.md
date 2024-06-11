@@ -1,5 +1,5 @@
-# Agent Info Service
-Service for accessing information about the agent - profile, fleet, contracts, etc.
+# Waypoint Navigation Service
+Service for storing and accessing information about galaxy map
 
 # Basic Golang web docs
 
@@ -9,11 +9,14 @@ https://gowebexamples.com/
 
 https://spacetraders.stoplight.io/docs/spacetraders/11f2735b75b02-space-traders-api
 
-### GET current agent
-https://api.spacetraders.io/v2/my/agent
+### GET current system
+https://api.spacetraders.io/v2/systems/X1-FQ86
 
-### GET my ships
-https://api.spacetraders.io/v2/my/ships
+### GET waypoints with details
+https://api.spacetraders.io/v2/systems/X1-JF95/waypoints
 
-### GET my contracts
-https://api.spacetraders.io/v2/my/contracts
+### GET waypoint details
+https://api.spacetraders.io/v2/systems/X1-FQ86/waypoints/X1-FQ86-B29
+
+### GET market info
+https://api.spacetraders.io/v2/systems/X1-FQ86/waypoints/X1-FQ86-H55/market
