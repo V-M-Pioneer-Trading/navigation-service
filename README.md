@@ -1,9 +1,9 @@
 # Waypoint Navigation Service
 Service for storing and accessing information about galaxy map
 
-# Basic Golang web docs
+# Basic Kotlin/Ktor HTTP API Example
 
-https://gowebexamples.com/
+https://ktor.io/docs/creating-http-apis.html
 
 ## Spacetraders API reference
 
