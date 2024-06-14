@@ -5,13 +5,17 @@ Service for storing and accessing information about galaxy map
 
 ### MacOS
 Open the project root directory in terminal, and execute:
-./gradlew build
-./gradlew run
+
+> ./gradlew build
+
+> ./gradlew run
 
 ### Windows
 Open the project root directory in terminal, and execute:
-.\gradlew.bat build
-.\gradlew.bat run
+
+> .\gradlew.bat build
+
+> .\gradlew.bat run
 
 # References
 
