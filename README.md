@@ -61,6 +61,44 @@ Override via environment variables or `application.properties`.
 .\gradlew.bat test         # tests only
 ```
 
+### Container (GHCR)
+
+GitHub Actions workflow `.github/workflows/container.yml`:
+
+- On `pull_request` to `main`: builds Docker image (verification only).
+- On `push` to `main` and tags `v*`: builds and pushes to GHCR with `latest` and commit-SHA tags.
+
+Image:
+
+```bash
+ghcr.io/v-m-pioneer-trading/navigation-service:latest
+ghcr.io/v-m-pioneer-trading/navigation-service:sha-<full_commit_sha>
+```
+
+Manual build + push (optional):
+
+```bash
+export IMAGE=ghcr.io/v-m-pioneer-trading/navigation-service
+export SHA=$(git rev-parse HEAD)
+
+docker build -t $IMAGE:latest -t $IMAGE:sha-$SHA .
+echo $GITHUB_TOKEN | docker login ghcr.io -u <github-username> --password-stdin
+docker push $IMAGE:latest
+docker push $IMAGE:sha-$SHA
+```
+
+Run on EC2:
+
+```bash
+docker pull ghcr.io/v-m-pioneer-trading/navigation-service:latest
+docker run -d --name navigation-service --restart unless-stopped \
+  -p 8080:8080 \
+  -e SQLITE_DB_PATH=/data/nav.db \
+  -e SPRING_PROFILES_ACTIVE=prod \
+  -v nav-data:/data \
+  ghcr.io/v-m-pioneer-trading/navigation-service:latest
+```
+
 ---
 
 ## API
