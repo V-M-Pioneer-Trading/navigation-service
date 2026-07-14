@@ -1,1 +1,1 @@
-rootProject.name = "de.vnm.navigation-service"
+rootProject.name = "navigation-service"
