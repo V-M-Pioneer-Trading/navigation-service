@@ -23,7 +23,7 @@ repositories {
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
-    implementation("org.springframework.boot:spring-boot-starter-data-jdbc")
+    implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.xerial:sqlite-jdbc:3.47.1.0")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0")
 
