@@ -69,6 +69,64 @@ public class SpaceTradersClient {
     }
 
     /**
+     * Fetch market data for a waypoint from SpaceTraders.
+     *
+     * @param systemSymbol   e.g. {@code X1-FQ86}
+     * @param waypointSymbol e.g. {@code X1-FQ86-B29}
+     * @param authHeader     full {@code Authorization} header value (e.g. {@code Bearer <token>})
+     */
+    public JsonNode fetchMarket(String systemSymbol, String waypointSymbol, String authHeader) {
+        log.debug("Fetching market for {} from SpaceTraders", waypointSymbol);
+        String body = restClient.get()
+                .uri("/systems/{system}/waypoints/{waypoint}/market", systemSymbol, waypointSymbol)
+                .header("Authorization", authHeader)
+                .retrieve()
+                .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
+                    HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());
+                    String msg = "SpaceTraders returned " + res.getStatusCode() +
+                                 " for market at " + waypointSymbol;
+                    throw new UpstreamException(
+                            status != null ? status : HttpStatus.BAD_GATEWAY, msg);
+                })
+                .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
+                    throw new UpstreamException(HttpStatus.BAD_GATEWAY,
+                            "SpaceTraders upstream error: " + res.getStatusCode());
+                })
+                .body(String.class);
+
+        return parseData(body, waypointSymbol);
+    }
+
+    /**
+     * Fetch shipyard data for a waypoint from SpaceTraders.
+     *
+     * @param systemSymbol   e.g. {@code X1-FQ86}
+     * @param waypointSymbol e.g. {@code X1-FQ86-B29}
+     * @param authHeader     full {@code Authorization} header value (e.g. {@code Bearer <token>})
+     */
+    public JsonNode fetchShipyard(String systemSymbol, String waypointSymbol, String authHeader) {
+        log.debug("Fetching shipyard for {} from SpaceTraders", waypointSymbol);
+        String body = restClient.get()
+                .uri("/systems/{system}/waypoints/{waypoint}/shipyard", systemSymbol, waypointSymbol)
+                .header("Authorization", authHeader)
+                .retrieve()
+                .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
+                    HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());
+                    String msg = "SpaceTraders returned " + res.getStatusCode() +
+                                 " for shipyard at " + waypointSymbol;
+                    throw new UpstreamException(
+                            status != null ? status : HttpStatus.BAD_GATEWAY, msg);
+                })
+                .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
+                    throw new UpstreamException(HttpStatus.BAD_GATEWAY,
+                            "SpaceTraders upstream error: " + res.getStatusCode());
+                })
+                .body(String.class);
+
+        return parseData(body, waypointSymbol);
+    }
+
+    /**
      * Fetch all waypoints for a system, following pagination automatically.
      *
      * @param systemSymbol e.g. {@code X1-FQ86}
