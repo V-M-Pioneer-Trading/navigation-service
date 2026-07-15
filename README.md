@@ -51,6 +51,7 @@ SQLite database is created at `./data/navigation.db` on first run.
 |---------------------|--------------------------|------------------------------------|
 | `SQLITE_DB_PATH`    | `./data/navigation.db`   | Path to the SQLite database file   |
 | `SERVER_PORT`       | `8080`                   | HTTP port                          |
+| `CORS_ALLOWED_ORIGIN` | `http://localhost:3000` | Frontend origin allowed to call `/api/**` |
 
 Override via environment variables or `application.properties`.
 
@@ -122,6 +123,20 @@ All endpoints require `Authorization: Bearer <token>` (your SpaceTraders token).
 | Parameter      | Type    | Default | Description |
 |---------------|---------|---------|-------------|
 | `forceRefresh` | boolean | `false` | Bypass cache, re-fetch from SpaceTraders. |
+
+### Market
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/api/v1/waypoints/{symbol}/market` | Get market data (imports/exports/prices). Cache TTL is 60s — prices move with trading activity, unlike waypoints. |
+| `POST` | `/api/v1/waypoints/{symbol}/market/refresh` | Force-refresh market data from SpaceTraders. |
+
+### Shipyard
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/api/v1/waypoints/{symbol}/shipyard` | Get shipyard data (ships for sale). Cached indefinitely, same policy as waypoints. |
+| `POST` | `/api/v1/waypoints/{symbol}/shipyard/refresh` | Force-refresh shipyard data from SpaceTraders. |
 
 ### Example requests
 
