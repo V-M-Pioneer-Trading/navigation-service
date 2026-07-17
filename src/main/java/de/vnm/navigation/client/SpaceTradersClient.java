@@ -15,10 +15,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * HTTP client for the SpaceTraders v2 API.
+ * HTTP client for the SpaceTraders v2 API, routed through st-gateway's shared
+ * rate budget (meta#1/meta#7) rather than hitting SpaceTraders directly.
  * <p>
  * The caller's {@code Authorization: Bearer <token>} header is forwarded on every
  * request and is never stored by this service.
+ * <p>
+ * Every call here is triggered by a browser request to navigation-service today —
+ * there is no background caller yet (that lands with automation-service's ship
+ * FSMs) — so all traffic is tagged {@code X-Priority: interactive}. Once
+ * automation-service calls navigation-service directly, this needs to forward
+ * whatever priority the caller declared instead of hardcoding it.
  */
 @Component
 public class SpaceTradersClient {
@@ -51,6 +58,7 @@ public class SpaceTradersClient {
         String body = restClient.get()
                 .uri("/systems/{system}/waypoints/{waypoint}", systemSymbol, waypointSymbol)
                 .header("Authorization", authHeader)
+                .header("X-Priority", "interactive")
                 .retrieve()
                 .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
                     HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());
@@ -80,6 +88,7 @@ public class SpaceTradersClient {
         String body = restClient.get()
                 .uri("/systems/{system}/waypoints/{waypoint}/market", systemSymbol, waypointSymbol)
                 .header("Authorization", authHeader)
+                .header("X-Priority", "interactive")
                 .retrieve()
                 .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
                     HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());
@@ -109,6 +118,7 @@ public class SpaceTradersClient {
         String body = restClient.get()
                 .uri("/systems/{system}/waypoints/{waypoint}/shipyard", systemSymbol, waypointSymbol)
                 .header("Authorization", authHeader)
+                .header("X-Priority", "interactive")
                 .retrieve()
                 .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
                     HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());
@@ -147,6 +157,7 @@ public class SpaceTradersClient {
                                .queryParam("limit", PAGE_LIMIT)
                                .build(systemSymbol))
                     .header("Authorization", authHeader)
+                    .header("X-Priority", "interactive")
                     .retrieve()
                     .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
                         HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());
