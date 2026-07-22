@@ -42,7 +42,7 @@ class MarketServiceTest {
         LocationDataEntity cached = marketEntity(Instant.now().minusSeconds(10).toString());
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(cached));
 
-        JsonNode result = service.getMarket(SYMBOL, AUTH, false);
+        JsonNode result = service.getMarket(SYMBOL, AUTH, null, false);
 
         assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
         verifyNoInteractions(spaceTradersClient);
@@ -54,12 +54,12 @@ class MarketServiceTest {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(cached));
         JsonNode upstream = objectMapper.readTree("""
                 {"symbol":"X1-FQ86-B29","tradeGoods":[]}""");
-        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, AUTH)).thenReturn(upstream);
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, AUTH, null)).thenReturn(upstream);
 
-        JsonNode result = service.getMarket(SYMBOL, AUTH, false);
+        JsonNode result = service.getMarket(SYMBOL, AUTH, null, false);
 
         assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
-        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, AUTH);
+        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, AUTH, null);
     }
 
     @Test
@@ -67,9 +67,9 @@ class MarketServiceTest {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.empty());
         JsonNode upstream = objectMapper.readTree("""
                 {"symbol":"X1-FQ86-B29","tradeGoods":[]}""");
-        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, AUTH)).thenReturn(upstream);
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, AUTH, null)).thenReturn(upstream);
 
-        service.getMarket(SYMBOL, AUTH, false);
+        service.getMarket(SYMBOL, AUTH, null, false);
 
         ArgumentCaptor<LocationDataEntity> captor = ArgumentCaptor.forClass(LocationDataEntity.class);
         verify(repository).upsert(captor.capture());
@@ -81,12 +81,12 @@ class MarketServiceTest {
     void getMarket_forceRefresh_bypassesCacheAndFetchesUpstream() throws Exception {
         JsonNode upstream = objectMapper.readTree("""
                 {"symbol":"X1-FQ86-B29","tradeGoods":[]}""");
-        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, AUTH)).thenReturn(upstream);
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, AUTH, null)).thenReturn(upstream);
 
-        service.getMarket(SYMBOL, AUTH, true);
+        service.getMarket(SYMBOL, AUTH, null, true);
 
         verify(repository, never()).findBySymbol(any());
-        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, AUTH);
+        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, AUTH, null);
     }
 
     private LocationDataEntity marketEntity(String fetchedAt) {

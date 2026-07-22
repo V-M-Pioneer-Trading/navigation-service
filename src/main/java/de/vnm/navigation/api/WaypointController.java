@@ -55,9 +55,10 @@ public class WaypointController {
             @PathVariable String symbol,
             @Parameter(description = "Bypass cache and re-fetch from SpaceTraders")
             @RequestParam(defaultValue = "false") boolean forceRefresh,
-            @RequestHeader("Authorization") String authorization) {
+            @RequestHeader("Authorization") String authorization,
+            @RequestHeader(value = "X-Priority", required = false) String priority) {
 
-        JsonNode data = waypointService.getWaypoint(symbol, authorization, forceRefresh);
+        JsonNode data = waypointService.getWaypoint(symbol, authorization, priority, forceRefresh);
         return ResponseEntity.ok(data);
     }
 
@@ -75,9 +76,10 @@ public class WaypointController {
     public ResponseEntity<JsonNode> refreshWaypoint(
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")
             @PathVariable String symbol,
-            @RequestHeader("Authorization") String authorization) {
+            @RequestHeader("Authorization") String authorization,
+            @RequestHeader(value = "X-Priority", required = false) String priority) {
 
-        JsonNode data = waypointService.refreshWaypoint(symbol, authorization);
+        JsonNode data = waypointService.refreshWaypoint(symbol, authorization, priority);
         return ResponseEntity.ok(data);
     }
 
@@ -102,10 +104,11 @@ public class WaypointController {
             @PathVariable String systemSymbol,
             @Parameter(description = "Bypass cache and re-fetch all waypoints for the system")
             @RequestParam(defaultValue = "false") boolean forceRefresh,
-            @RequestHeader("Authorization") String authorization) {
+            @RequestHeader("Authorization") String authorization,
+            @RequestHeader(value = "X-Priority", required = false) String priority) {
 
         List<JsonNode> waypoints =
-                waypointService.getWaypointsBySystem(systemSymbol, authorization, forceRefresh);
+                waypointService.getWaypointsBySystem(systemSymbol, authorization, priority, forceRefresh);
         return ResponseEntity.ok(Map.of("data", waypoints, "total", waypoints.size()));
     }
 
@@ -122,10 +125,11 @@ public class WaypointController {
     public ResponseEntity<Map<String, Object>> refreshWaypointsBySystem(
             @Parameter(description = "System symbol, e.g. X1-FQ86")
             @PathVariable String systemSymbol,
-            @RequestHeader("Authorization") String authorization) {
+            @RequestHeader("Authorization") String authorization,
+            @RequestHeader(value = "X-Priority", required = false) String priority) {
 
         List<JsonNode> waypoints =
-                waypointService.refreshWaypointsBySystem(systemSymbol, authorization);
+                waypointService.refreshWaypointsBySystem(systemSymbol, authorization, priority);
         return ResponseEntity.ok(Map.of("data", waypoints, "total", waypoints.size()));
     }
 }

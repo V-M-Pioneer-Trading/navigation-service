@@ -41,7 +41,7 @@ public class MarketService {
         this.objectMapper = objectMapper;
     }
 
-    public JsonNode getMarket(String waypointSymbol, String authHeader, boolean forceRefresh) {
+    public JsonNode getMarket(String waypointSymbol, String authHeader, String priority, boolean forceRefresh) {
         if (!forceRefresh) {
             Optional<LocationDataEntity> cached = repository.findBySymbol(waypointSymbol);
             if (cached.isPresent() && !isStale(cached.get())) {
@@ -52,13 +52,13 @@ public class MarketService {
 
         log.debug("Cache miss for market {} — fetching from SpaceTraders", waypointSymbol);
         String systemSymbol = WaypointService.extractSystemSymbol(waypointSymbol);
-        JsonNode data = spaceTradersClient.fetchMarket(systemSymbol, waypointSymbol, authHeader);
+        JsonNode data = spaceTradersClient.fetchMarket(systemSymbol, waypointSymbol, authHeader, priority);
         repository.upsert(toEntity(waypointSymbol, systemSymbol, data));
         return data;
     }
 
-    public JsonNode refreshMarket(String waypointSymbol, String authHeader) {
-        return getMarket(waypointSymbol, authHeader, true);
+    public JsonNode refreshMarket(String waypointSymbol, String authHeader, String priority) {
+        return getMarket(waypointSymbol, authHeader, priority, true);
     }
 
     private boolean isStale(LocationDataEntity entity) {

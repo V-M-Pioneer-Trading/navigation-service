@@ -21,11 +21,12 @@ import java.util.List;
  * The caller's {@code Authorization: Bearer <token>} header is forwarded on every
  * request and is never stored by this service.
  * <p>
- * Every call here is triggered by a browser request to navigation-service today —
- * there is no background caller yet (that lands with automation-service's ship
- * FSMs) — so all traffic is tagged {@code X-Priority: interactive}. Once
- * automation-service calls navigation-service directly, this needs to forward
- * whatever priority the caller declared instead of hardcoding it.
+ * Every fetch* method takes the caller's own {@code X-Priority} declaration and
+ * forwards it through to st-gateway's priority queue (meta#37) —
+ * command-interface (browser) sends {@code interactive}, automation-service
+ * (autopilot) sends nothing. {@link #normalizePriority} degrades anything but
+ * exactly {@code interactive} to {@code background} so a missing or malformed
+ * header never accidentally jumps the queue.
  */
 @Component
 public class SpaceTradersClient {
@@ -45,20 +46,25 @@ public class SpaceTradersClient {
         this.objectMapper = objectMapper;
     }
 
+    private static String normalizePriority(String priority) {
+        return "interactive".equals(priority) ? "interactive" : "background";
+    }
+
     /**
      * Fetch a single waypoint from SpaceTraders.
      *
      * @param systemSymbol   e.g. {@code X1-FQ86}
      * @param waypointSymbol e.g. {@code X1-FQ86-B29}
      * @param authHeader     full {@code Authorization} header value (e.g. {@code Bearer <token>})
+     * @param priority       caller's {@code X-Priority} declaration ({@code interactive} or anything else)
      * @return the waypoint {@link JsonNode} as returned by SpaceTraders
      */
-    public JsonNode fetchWaypoint(String systemSymbol, String waypointSymbol, String authHeader) {
+    public JsonNode fetchWaypoint(String systemSymbol, String waypointSymbol, String authHeader, String priority) {
         log.debug("Fetching waypoint {} from SpaceTraders", waypointSymbol);
         String body = restClient.get()
                 .uri("/systems/{system}/waypoints/{waypoint}", systemSymbol, waypointSymbol)
                 .header("Authorization", authHeader)
-                .header("X-Priority", "interactive")
+                .header("X-Priority", normalizePriority(priority))
                 .retrieve()
                 .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
                     HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());
@@ -83,12 +89,12 @@ public class SpaceTradersClient {
      * @param waypointSymbol e.g. {@code X1-FQ86-B29}
      * @param authHeader     full {@code Authorization} header value (e.g. {@code Bearer <token>})
      */
-    public JsonNode fetchMarket(String systemSymbol, String waypointSymbol, String authHeader) {
+    public JsonNode fetchMarket(String systemSymbol, String waypointSymbol, String authHeader, String priority) {
         log.debug("Fetching market for {} from SpaceTraders", waypointSymbol);
         String body = restClient.get()
                 .uri("/systems/{system}/waypoints/{waypoint}/market", systemSymbol, waypointSymbol)
                 .header("Authorization", authHeader)
-                .header("X-Priority", "interactive")
+                .header("X-Priority", normalizePriority(priority))
                 .retrieve()
                 .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
                     HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());
@@ -113,12 +119,12 @@ public class SpaceTradersClient {
      * @param waypointSymbol e.g. {@code X1-FQ86-B29}
      * @param authHeader     full {@code Authorization} header value (e.g. {@code Bearer <token>})
      */
-    public JsonNode fetchShipyard(String systemSymbol, String waypointSymbol, String authHeader) {
+    public JsonNode fetchShipyard(String systemSymbol, String waypointSymbol, String authHeader, String priority) {
         log.debug("Fetching shipyard for {} from SpaceTraders", waypointSymbol);
         String body = restClient.get()
                 .uri("/systems/{system}/waypoints/{waypoint}/shipyard", systemSymbol, waypointSymbol)
                 .header("Authorization", authHeader)
-                .header("X-Priority", "interactive")
+                .header("X-Priority", normalizePriority(priority))
                 .retrieve()
                 .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
                     HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());
@@ -143,7 +149,7 @@ public class SpaceTradersClient {
      * @param authHeader   full {@code Authorization} header value
      * @return list of waypoint {@link JsonNode}s
      */
-    public List<JsonNode> fetchWaypointsBySystem(String systemSymbol, String authHeader) {
+    public List<JsonNode> fetchWaypointsBySystem(String systemSymbol, String authHeader, String priority) {
         log.debug("Fetching all waypoints for system {} from SpaceTraders", systemSymbol);
         List<JsonNode> all = new ArrayList<>();
         int page = 1;
@@ -157,7 +163,7 @@ public class SpaceTradersClient {
                                .queryParam("limit", PAGE_LIMIT)
                                .build(systemSymbol))
                     .header("Authorization", authHeader)
-                    .header("X-Priority", "interactive")
+                    .header("X-Priority", normalizePriority(priority))
                     .retrieve()
                     .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
                         HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());

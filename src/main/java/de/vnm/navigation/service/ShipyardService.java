@@ -38,7 +38,7 @@ public class ShipyardService {
         this.objectMapper = objectMapper;
     }
 
-    public JsonNode getShipyard(String waypointSymbol, String authHeader, boolean forceRefresh) {
+    public JsonNode getShipyard(String waypointSymbol, String authHeader, String priority, boolean forceRefresh) {
         if (!forceRefresh) {
             Optional<LocationDataEntity> cached = repository.findBySymbol(waypointSymbol);
             if (cached.isPresent()) {
@@ -49,13 +49,13 @@ public class ShipyardService {
 
         log.debug("Cache miss for shipyard {} — fetching from SpaceTraders", waypointSymbol);
         String systemSymbol = WaypointService.extractSystemSymbol(waypointSymbol);
-        JsonNode data = spaceTradersClient.fetchShipyard(systemSymbol, waypointSymbol, authHeader);
+        JsonNode data = spaceTradersClient.fetchShipyard(systemSymbol, waypointSymbol, authHeader, priority);
         repository.upsert(toEntity(waypointSymbol, systemSymbol, data));
         return data;
     }
 
-    public JsonNode refreshShipyard(String waypointSymbol, String authHeader) {
-        return getShipyard(waypointSymbol, authHeader, true);
+    public JsonNode refreshShipyard(String waypointSymbol, String authHeader, String priority) {
+        return getShipyard(waypointSymbol, authHeader, priority, true);
     }
 
     private LocationDataEntity toEntity(String symbol, String systemSymbol, JsonNode data) {

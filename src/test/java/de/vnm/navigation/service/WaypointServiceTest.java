@@ -47,7 +47,7 @@ class WaypointServiceTest {
                 {"symbol":"X1-FQ86-B29","type":"ASTEROID","systemSymbol":"X1-FQ86","x":10,"y":20}""");
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(cached));
 
-        JsonNode result = service.getWaypoint(SYMBOL, AUTH, false);
+        JsonNode result = service.getWaypoint(SYMBOL, AUTH, null, false);
 
         assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
         verifyNoInteractions(spaceTradersClient);
@@ -59,7 +59,7 @@ class WaypointServiceTest {
                 {"symbol":"X1-FQ86-B29","type":"ASTEROID","systemSymbol":"X1-FQ86","x":10,"y":20}""");
         when(repository.findBySystemSymbol(SYSTEM)).thenReturn(List.of(cached));
 
-        List<JsonNode> result = service.getWaypointsBySystem(SYSTEM, AUTH, false);
+        List<JsonNode> result = service.getWaypointsBySystem(SYSTEM, AUTH, null, false);
 
         assertThat(result).hasSize(1);
         verifyNoInteractions(spaceTradersClient);
@@ -72,12 +72,12 @@ class WaypointServiceTest {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.empty());
         JsonNode upstream = objectMapper.readTree("""
                 {"symbol":"X1-FQ86-B29","type":"ASTEROID","systemSymbol":"X1-FQ86","x":10,"y":20}""");
-        when(spaceTradersClient.fetchWaypoint(SYSTEM, SYMBOL, AUTH)).thenReturn(upstream);
+        when(spaceTradersClient.fetchWaypoint(SYSTEM, SYMBOL, AUTH, null)).thenReturn(upstream);
 
-        JsonNode result = service.getWaypoint(SYMBOL, AUTH, false);
+        JsonNode result = service.getWaypoint(SYMBOL, AUTH, null, false);
 
         assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
-        verify(spaceTradersClient).fetchWaypoint(SYSTEM, SYMBOL, AUTH);
+        verify(spaceTradersClient).fetchWaypoint(SYSTEM, SYMBOL, AUTH, null);
 
         ArgumentCaptor<WaypointEntity> captor = ArgumentCaptor.forClass(WaypointEntity.class);
         verify(repository).upsert(captor.capture());
@@ -92,21 +92,21 @@ class WaypointServiceTest {
     void getWaypoint_forceRefresh_bypassesCacheAndFetchesUpstream() throws Exception {
         JsonNode upstream = objectMapper.readTree("""
                 {"symbol":"X1-FQ86-B29","type":"ASTEROID","systemSymbol":"X1-FQ86","x":10,"y":20}""");
-        when(spaceTradersClient.fetchWaypoint(SYSTEM, SYMBOL, AUTH)).thenReturn(upstream);
+        when(spaceTradersClient.fetchWaypoint(SYSTEM, SYMBOL, AUTH, null)).thenReturn(upstream);
 
-        service.getWaypoint(SYMBOL, AUTH, true);
+        service.getWaypoint(SYMBOL, AUTH, null, true);
 
         verify(repository, never()).findBySymbol(any());
-        verify(spaceTradersClient).fetchWaypoint(SYSTEM, SYMBOL, AUTH);
+        verify(spaceTradersClient).fetchWaypoint(SYSTEM, SYMBOL, AUTH, null);
     }
 
     @Test
     void getWaypointsBySystem_forceRefresh_deletesExistingAndRefetchesAll() throws Exception {
         JsonNode w1 = objectMapper.readTree("""
                 {"symbol":"X1-FQ86-B29","type":"ASTEROID","systemSymbol":"X1-FQ86","x":10,"y":20}""");
-        when(spaceTradersClient.fetchWaypointsBySystem(SYSTEM, AUTH)).thenReturn(List.of(w1));
+        when(spaceTradersClient.fetchWaypointsBySystem(SYSTEM, AUTH, null)).thenReturn(List.of(w1));
 
-        List<JsonNode> result = service.getWaypointsBySystem(SYSTEM, AUTH, true);
+        List<JsonNode> result = service.getWaypointsBySystem(SYSTEM, AUTH, null, true);
 
         assertThat(result).hasSize(1);
         verify(repository, never()).findBySystemSymbol(any());
@@ -121,11 +121,11 @@ class WaypointServiceTest {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.empty());
         JsonNode upstream = objectMapper.readTree("""
                 {"symbol":"X1-FQ86-B29","type":"ASTEROID","systemSymbol":"X1-FQ86","x":10,"y":20}""");
-        when(spaceTradersClient.fetchWaypoint(anyString(), anyString(), eq(AUTH))).thenReturn(upstream);
+        when(spaceTradersClient.fetchWaypoint(anyString(), anyString(), eq(AUTH), any())).thenReturn(upstream);
 
-        service.getWaypoint(SYMBOL, AUTH, false);
+        service.getWaypoint(SYMBOL, AUTH, "interactive", false);
 
-        verify(spaceTradersClient).fetchWaypoint(eq(SYSTEM), eq(SYMBOL), eq(AUTH));
+        verify(spaceTradersClient).fetchWaypoint(eq(SYSTEM), eq(SYMBOL), eq(AUTH), eq("interactive"));
     }
 
     // ── upstream error propagation ───────────────────────────────────────────
@@ -133,10 +133,10 @@ class WaypointServiceTest {
     @Test
     void getWaypoint_upstreamReturns404_throwsUpstreamException() {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.empty());
-        when(spaceTradersClient.fetchWaypoint(any(), any(), any()))
+        when(spaceTradersClient.fetchWaypoint(any(), any(), any(), any()))
                 .thenThrow(new UpstreamException(HttpStatus.NOT_FOUND, "Not found"));
 
-        assertThatThrownBy(() -> service.getWaypoint(SYMBOL, AUTH, false))
+        assertThatThrownBy(() -> service.getWaypoint(SYMBOL, AUTH, null, false))
                 .isInstanceOf(UpstreamException.class)
                 .satisfies(e -> assertThat(((UpstreamException) e).getStatus())
                         .isEqualTo(HttpStatus.NOT_FOUND));

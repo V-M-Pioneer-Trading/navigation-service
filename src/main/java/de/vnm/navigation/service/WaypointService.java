@@ -53,7 +53,7 @@ public class WaypointService {
      * @param authHeader   full {@code Authorization} header; forwarded to SpaceTraders, never stored
      * @param forceRefresh when {@code true}, bypass cache and re-fetch from upstream
      */
-    public JsonNode getWaypoint(String symbol, String authHeader, boolean forceRefresh) {
+    public JsonNode getWaypoint(String symbol, String authHeader, String priority, boolean forceRefresh) {
         if (!forceRefresh) {
             Optional<WaypointEntity> cached = repository.findBySymbol(symbol);
             if (cached.isPresent()) {
@@ -64,7 +64,7 @@ public class WaypointService {
 
         log.debug("Cache miss for waypoint {} — fetching from SpaceTraders", symbol);
         String systemSymbol = extractSystemSymbol(symbol);
-        JsonNode data = spaceTradersClient.fetchWaypoint(systemSymbol, symbol, authHeader);
+        JsonNode data = spaceTradersClient.fetchWaypoint(systemSymbol, symbol, authHeader, priority);
         WaypointEntity entity = toEntity(data);
         repository.upsert(entity);
         return data;
@@ -77,7 +77,7 @@ public class WaypointService {
      * @param authHeader   full {@code Authorization} header; forwarded to SpaceTraders, never stored
      * @param forceRefresh when {@code true}, bypass cache and re-fetch all waypoints from upstream
      */
-    public List<JsonNode> getWaypointsBySystem(String systemSymbol, String authHeader,
+    public List<JsonNode> getWaypointsBySystem(String systemSymbol, String authHeader, String priority,
                                                boolean forceRefresh) {
         if (!forceRefresh) {
             List<WaypointEntity> cached = repository.findBySystemSymbol(systemSymbol);
@@ -91,7 +91,7 @@ public class WaypointService {
 
         log.debug("Cache miss for system {} — fetching all waypoints from SpaceTraders",
                 systemSymbol);
-        List<JsonNode> fetched = spaceTradersClient.fetchWaypointsBySystem(systemSymbol, authHeader);
+        List<JsonNode> fetched = spaceTradersClient.fetchWaypointsBySystem(systemSymbol, authHeader, priority);
 
         // Replace any existing rows for the system atomically within the same thread
         repository.deleteBySystemSymbol(systemSymbol);
@@ -103,15 +103,15 @@ public class WaypointService {
     /**
      * Force-refresh a single waypoint from SpaceTraders and update the cache.
      */
-    public JsonNode refreshWaypoint(String symbol, String authHeader) {
-        return getWaypoint(symbol, authHeader, true);
+    public JsonNode refreshWaypoint(String symbol, String authHeader, String priority) {
+        return getWaypoint(symbol, authHeader, priority, true);
     }
 
     /**
      * Force-refresh all waypoints for a system from SpaceTraders and update the cache.
      */
-    public List<JsonNode> refreshWaypointsBySystem(String systemSymbol, String authHeader) {
-        return getWaypointsBySystem(systemSymbol, authHeader, true);
+    public List<JsonNode> refreshWaypointsBySystem(String systemSymbol, String authHeader, String priority) {
+        return getWaypointsBySystem(systemSymbol, authHeader, priority, true);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

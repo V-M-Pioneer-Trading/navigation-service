@@ -40,7 +40,7 @@ class WaypointControllerTest {
     void getWaypoint_returns200WithData() throws Exception {
         JsonNode waypointJson = objectMapper.readTree("""
                 {"symbol":"X1-FQ86-B29","type":"ASTEROID","x":10,"y":20}""");
-        when(waypointService.getWaypoint(eq(SYMBOL), eq(AUTH), eq(false))).thenReturn(waypointJson);
+        when(waypointService.getWaypoint(eq(SYMBOL), eq(AUTH), isNull(), eq(false))).thenReturn(waypointJson);
 
         mockMvc.perform(get("/api/v1/waypoints/{symbol}", SYMBOL)
                         .header("Authorization", AUTH))
@@ -53,19 +53,19 @@ class WaypointControllerTest {
     void getWaypoint_forceRefresh_passedToService() throws Exception {
         JsonNode waypointJson = objectMapper.readTree("""
                 {"symbol":"X1-FQ86-B29","type":"ASTEROID","x":10,"y":20}""");
-        when(waypointService.getWaypoint(eq(SYMBOL), eq(AUTH), eq(true))).thenReturn(waypointJson);
+        when(waypointService.getWaypoint(eq(SYMBOL), eq(AUTH), isNull(), eq(true))).thenReturn(waypointJson);
 
         mockMvc.perform(get("/api/v1/waypoints/{symbol}", SYMBOL)
                         .param("forceRefresh", "true")
                         .header("Authorization", AUTH))
                .andExpect(status().isOk());
 
-        verify(waypointService).getWaypoint(SYMBOL, AUTH, true);
+        verify(waypointService).getWaypoint(SYMBOL, AUTH, null, true);
     }
 
     @Test
     void getWaypoint_upstreamReturns404_propagatesNotFound() throws Exception {
-        when(waypointService.getWaypoint(any(), any(), anyBoolean()))
+        when(waypointService.getWaypoint(any(), any(), any(), anyBoolean()))
                 .thenThrow(new UpstreamException(HttpStatus.NOT_FOUND, "Waypoint not found"));
 
         mockMvc.perform(get("/api/v1/waypoints/{symbol}", SYMBOL)
@@ -75,7 +75,7 @@ class WaypointControllerTest {
 
     @Test
     void getWaypoint_upstreamReturns401_propagatesUnauthorized() throws Exception {
-        when(waypointService.getWaypoint(any(), any(), anyBoolean()))
+        when(waypointService.getWaypoint(any(), any(), any(), anyBoolean()))
                 .thenThrow(new UpstreamException(HttpStatus.UNAUTHORIZED, "Invalid token"));
 
         mockMvc.perform(get("/api/v1/waypoints/{symbol}", SYMBOL)
@@ -89,7 +89,7 @@ class WaypointControllerTest {
     void refreshWaypoint_returns200WithUpdatedData() throws Exception {
         JsonNode waypointJson = objectMapper.readTree("""
                 {"symbol":"X1-FQ86-B29","type":"ASTEROID","x":10,"y":20}""");
-        when(waypointService.refreshWaypoint(eq(SYMBOL), eq(AUTH))).thenReturn(waypointJson);
+        when(waypointService.refreshWaypoint(eq(SYMBOL), eq(AUTH), isNull())).thenReturn(waypointJson);
 
         mockMvc.perform(post("/api/v1/waypoints/{symbol}/refresh", SYMBOL)
                         .header("Authorization", AUTH))
@@ -105,7 +105,7 @@ class WaypointControllerTest {
                 {"symbol":"X1-FQ86-B29","type":"ASTEROID","x":10,"y":20}""");
         JsonNode w2 = objectMapper.readTree("""
                 {"symbol":"X1-FQ86-A1","type":"PLANET","x":-5,"y":3}""");
-        when(waypointService.getWaypointsBySystem(eq(SYSTEM), eq(AUTH), eq(false)))
+        when(waypointService.getWaypointsBySystem(eq(SYSTEM), eq(AUTH), isNull(), eq(false)))
                 .thenReturn(List.of(w1, w2));
 
         mockMvc.perform(get("/api/v1/systems/{systemSymbol}/waypoints", SYSTEM)
@@ -118,7 +118,7 @@ class WaypointControllerTest {
 
     @Test
     void getWaypointsBySystem_forceRefresh_passedToService() throws Exception {
-        when(waypointService.getWaypointsBySystem(eq(SYSTEM), eq(AUTH), eq(true)))
+        when(waypointService.getWaypointsBySystem(eq(SYSTEM), eq(AUTH), isNull(), eq(true)))
                 .thenReturn(List.of());
 
         mockMvc.perform(get("/api/v1/systems/{systemSymbol}/waypoints", SYSTEM)
@@ -126,7 +126,7 @@ class WaypointControllerTest {
                         .header("Authorization", AUTH))
                .andExpect(status().isOk());
 
-        verify(waypointService).getWaypointsBySystem(SYSTEM, AUTH, true);
+        verify(waypointService).getWaypointsBySystem(SYSTEM, AUTH, null, true);
     }
 
     // ── POST /api/v1/systems/{systemSymbol}/waypoints/refresh ─────────────────
@@ -135,12 +135,48 @@ class WaypointControllerTest {
     void refreshWaypointsBySystem_returns200WithList() throws Exception {
         JsonNode w1 = objectMapper.readTree("""
                 {"symbol":"X1-FQ86-B29","type":"ASTEROID","x":10,"y":20}""");
-        when(waypointService.refreshWaypointsBySystem(eq(SYSTEM), eq(AUTH)))
+        when(waypointService.refreshWaypointsBySystem(eq(SYSTEM), eq(AUTH), isNull()))
                 .thenReturn(List.of(w1));
 
         mockMvc.perform(post("/api/v1/systems/{systemSymbol}/waypoints/refresh", SYSTEM)
                         .header("Authorization", AUTH))
                .andExpect(status().isOk())
                .andExpect(jsonPath("$.total").value(1));
+    }
+
+    // ── X-Priority propagation (meta#37) ──────────────────────────────────────
+    // navigation-service used to hardcode X-Priority: interactive on every
+    // outbound call, so automation-service's background autopilot traffic
+    // jumped st-gateway's queue meant to keep the browser UI responsive. It now
+    // forwards whatever the caller (command-interface vs automation-service)
+    // itself declared.
+
+    @Test
+    void getWaypoint_forwardsCallersPriorityHeaderToService() throws Exception {
+        JsonNode waypointJson = objectMapper.readTree("""
+                {"symbol":"X1-FQ86-B29","type":"ASTEROID","x":10,"y":20}""");
+        when(waypointService.getWaypoint(eq(SYMBOL), eq(AUTH), eq("interactive"), eq(false)))
+                .thenReturn(waypointJson);
+
+        mockMvc.perform(get("/api/v1/waypoints/{symbol}", SYMBOL)
+                        .header("Authorization", AUTH)
+                        .header("X-Priority", "interactive"))
+               .andExpect(status().isOk());
+
+        verify(waypointService).getWaypoint(SYMBOL, AUTH, "interactive", false);
+    }
+
+    @Test
+    void getWaypoint_missingPriorityHeader_passesNullNotInteractive() throws Exception {
+        JsonNode waypointJson = objectMapper.readTree("""
+                {"symbol":"X1-FQ86-B29","type":"ASTEROID","x":10,"y":20}""");
+        when(waypointService.getWaypoint(eq(SYMBOL), eq(AUTH), isNull(), eq(false)))
+                .thenReturn(waypointJson);
+
+        mockMvc.perform(get("/api/v1/waypoints/{symbol}", SYMBOL)
+                        .header("Authorization", AUTH))
+               .andExpect(status().isOk());
+
+        verify(waypointService).getWaypoint(SYMBOL, AUTH, null, false);
     }
 }
