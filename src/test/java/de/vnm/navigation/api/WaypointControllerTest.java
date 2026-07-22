@@ -34,7 +34,7 @@ class WaypointControllerTest {
     private static final String SYMBOL = "X1-FQ86-B29";
     private static final String SYSTEM = "X1-FQ86";
 
-    // ── GET /api/v1/waypoints/{symbol} ────────────────────────────────────────
+    // ── GET /api/navigation/v1/waypoints/{symbol} ────────────────────────────────────────
 
     @Test
     void getWaypoint_returns200WithData() throws Exception {
@@ -42,7 +42,7 @@ class WaypointControllerTest {
                 {"symbol":"X1-FQ86-B29","type":"ASTEROID","x":10,"y":20}""");
         when(waypointService.getWaypoint(eq(SYMBOL), eq(AUTH), isNull(), eq(false))).thenReturn(waypointJson);
 
-        mockMvc.perform(get("/api/v1/waypoints/{symbol}", SYMBOL)
+        mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL)
                         .header("Authorization", AUTH))
                .andExpect(status().isOk())
                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
@@ -55,7 +55,7 @@ class WaypointControllerTest {
                 {"symbol":"X1-FQ86-B29","type":"ASTEROID","x":10,"y":20}""");
         when(waypointService.getWaypoint(eq(SYMBOL), eq(AUTH), isNull(), eq(true))).thenReturn(waypointJson);
 
-        mockMvc.perform(get("/api/v1/waypoints/{symbol}", SYMBOL)
+        mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL)
                         .param("forceRefresh", "true")
                         .header("Authorization", AUTH))
                .andExpect(status().isOk());
@@ -68,7 +68,7 @@ class WaypointControllerTest {
         when(waypointService.getWaypoint(any(), any(), any(), anyBoolean()))
                 .thenThrow(new UpstreamException(HttpStatus.NOT_FOUND, "Waypoint not found"));
 
-        mockMvc.perform(get("/api/v1/waypoints/{symbol}", SYMBOL)
+        mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL)
                         .header("Authorization", AUTH))
                .andExpect(status().isNotFound());
     }
@@ -78,12 +78,12 @@ class WaypointControllerTest {
         when(waypointService.getWaypoint(any(), any(), any(), anyBoolean()))
                 .thenThrow(new UpstreamException(HttpStatus.UNAUTHORIZED, "Invalid token"));
 
-        mockMvc.perform(get("/api/v1/waypoints/{symbol}", SYMBOL)
+        mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL)
                         .header("Authorization", AUTH))
                .andExpect(status().isUnauthorized());
     }
 
-    // ── POST /api/v1/waypoints/{symbol}/refresh ───────────────────────────────
+    // ── POST /api/navigation/v1/waypoints/{symbol}/refresh ───────────────────────────────
 
     @Test
     void refreshWaypoint_returns200WithUpdatedData() throws Exception {
@@ -91,13 +91,13 @@ class WaypointControllerTest {
                 {"symbol":"X1-FQ86-B29","type":"ASTEROID","x":10,"y":20}""");
         when(waypointService.refreshWaypoint(eq(SYMBOL), eq(AUTH), isNull())).thenReturn(waypointJson);
 
-        mockMvc.perform(post("/api/v1/waypoints/{symbol}/refresh", SYMBOL)
+        mockMvc.perform(post("/api/navigation/v1/waypoints/{symbol}/refresh", SYMBOL)
                         .header("Authorization", AUTH))
                .andExpect(status().isOk())
                .andExpect(jsonPath("$.symbol").value(SYMBOL));
     }
 
-    // ── GET /api/v1/systems/{systemSymbol}/waypoints ──────────────────────────
+    // ── GET /api/navigation/v1/systems/{systemSymbol}/waypoints ──────────────────────────
 
     @Test
     void getWaypointsBySystem_returns200WithList() throws Exception {
@@ -108,7 +108,7 @@ class WaypointControllerTest {
         when(waypointService.getWaypointsBySystem(eq(SYSTEM), eq(AUTH), isNull(), eq(false)))
                 .thenReturn(List.of(w1, w2));
 
-        mockMvc.perform(get("/api/v1/systems/{systemSymbol}/waypoints", SYSTEM)
+        mockMvc.perform(get("/api/navigation/v1/systems/{systemSymbol}/waypoints", SYSTEM)
                         .header("Authorization", AUTH))
                .andExpect(status().isOk())
                .andExpect(jsonPath("$.total").value(2))
@@ -121,7 +121,7 @@ class WaypointControllerTest {
         when(waypointService.getWaypointsBySystem(eq(SYSTEM), eq(AUTH), isNull(), eq(true)))
                 .thenReturn(List.of());
 
-        mockMvc.perform(get("/api/v1/systems/{systemSymbol}/waypoints", SYSTEM)
+        mockMvc.perform(get("/api/navigation/v1/systems/{systemSymbol}/waypoints", SYSTEM)
                         .param("forceRefresh", "true")
                         .header("Authorization", AUTH))
                .andExpect(status().isOk());
@@ -129,7 +129,7 @@ class WaypointControllerTest {
         verify(waypointService).getWaypointsBySystem(SYSTEM, AUTH, null, true);
     }
 
-    // ── POST /api/v1/systems/{systemSymbol}/waypoints/refresh ─────────────────
+    // ── POST /api/navigation/v1/systems/{systemSymbol}/waypoints/refresh ─────────────────
 
     @Test
     void refreshWaypointsBySystem_returns200WithList() throws Exception {
@@ -138,7 +138,7 @@ class WaypointControllerTest {
         when(waypointService.refreshWaypointsBySystem(eq(SYSTEM), eq(AUTH), isNull()))
                 .thenReturn(List.of(w1));
 
-        mockMvc.perform(post("/api/v1/systems/{systemSymbol}/waypoints/refresh", SYSTEM)
+        mockMvc.perform(post("/api/navigation/v1/systems/{systemSymbol}/waypoints/refresh", SYSTEM)
                         .header("Authorization", AUTH))
                .andExpect(status().isOk())
                .andExpect(jsonPath("$.total").value(1));
@@ -158,7 +158,7 @@ class WaypointControllerTest {
         when(waypointService.getWaypoint(eq(SYMBOL), eq(AUTH), eq("interactive"), eq(false)))
                 .thenReturn(waypointJson);
 
-        mockMvc.perform(get("/api/v1/waypoints/{symbol}", SYMBOL)
+        mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL)
                         .header("Authorization", AUTH)
                         .header("X-Priority", "interactive"))
                .andExpect(status().isOk());
@@ -173,7 +173,7 @@ class WaypointControllerTest {
         when(waypointService.getWaypoint(eq(SYMBOL), eq(AUTH), isNull(), eq(false)))
                 .thenReturn(waypointJson);
 
-        mockMvc.perform(get("/api/v1/waypoints/{symbol}", SYMBOL)
+        mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL)
                         .header("Authorization", AUTH))
                .andExpect(status().isOk());
 

@@ -113,10 +113,10 @@ All endpoints require `Authorization: Bearer <token>` (your SpaceTraders token).
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET`  | `/api/v1/waypoints/{symbol}` | Get a waypoint by symbol. Cache hit returns immediately; miss fetches from SpaceTraders. |
-| `POST` | `/api/v1/waypoints/{symbol}/refresh` | Force-refresh a waypoint from SpaceTraders. |
-| `GET`  | `/api/v1/systems/{systemSymbol}/waypoints` | List all waypoints for a system. |
-| `POST` | `/api/v1/systems/{systemSymbol}/waypoints/refresh` | Force-refresh all waypoints for a system. |
+| `GET`  | `/api/navigation/v1/waypoints/{symbol}` | Get a waypoint by symbol. Cache hit returns immediately; miss fetches from SpaceTraders. |
+| `POST` | `/api/navigation/v1/waypoints/{symbol}/refresh` | Force-refresh a waypoint from SpaceTraders. |
+| `GET`  | `/api/navigation/v1/systems/{systemSymbol}/waypoints` | List all waypoints for a system. |
+| `POST` | `/api/navigation/v1/systems/{systemSymbol}/waypoints/refresh` | Force-refresh all waypoints for a system. |
 
 **Query parameters** (GET endpoints):
 
@@ -128,34 +128,34 @@ All endpoints require `Authorization: Bearer <token>` (your SpaceTraders token).
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET`  | `/api/v1/waypoints/{symbol}/market` | Get market data (imports/exports/prices). Cache TTL is 60s — prices move with trading activity, unlike waypoints. |
-| `POST` | `/api/v1/waypoints/{symbol}/market/refresh` | Force-refresh market data from SpaceTraders. |
+| `GET`  | `/api/navigation/v1/waypoints/{symbol}/market` | Get market data (imports/exports/prices). Cache TTL is 60s — prices move with trading activity, unlike waypoints. |
+| `POST` | `/api/navigation/v1/waypoints/{symbol}/market/refresh` | Force-refresh market data from SpaceTraders. |
 
 ### Shipyard
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET`  | `/api/v1/waypoints/{symbol}/shipyard` | Get shipyard data (ships for sale). Cached indefinitely, same policy as waypoints. |
-| `POST` | `/api/v1/waypoints/{symbol}/shipyard/refresh` | Force-refresh shipyard data from SpaceTraders. |
+| `GET`  | `/api/navigation/v1/waypoints/{symbol}/shipyard` | Get shipyard data (ships for sale). Cached indefinitely, same policy as waypoints. |
+| `POST` | `/api/navigation/v1/waypoints/{symbol}/shipyard/refresh` | Force-refresh shipyard data from SpaceTraders. |
 
 ### Example requests
 
 ```bash
 # Get a waypoint (token in Authorization header)
 curl -H "Authorization: Bearer <token>" \
-     http://localhost:8080/api/v1/waypoints/X1-FQ86-B29
+     http://localhost:8080/api/navigation/v1/waypoints/X1-FQ86-B29
 
 # Force refresh
 curl -H "Authorization: Bearer <token>" \
-     "http://localhost:8080/api/v1/waypoints/X1-FQ86-B29?forceRefresh=true"
+     "http://localhost:8080/api/navigation/v1/waypoints/X1-FQ86-B29?forceRefresh=true"
 
 # List all waypoints for a system
 curl -H "Authorization: Bearer <token>" \
-     http://localhost:8080/api/v1/systems/X1-FQ86/waypoints
+     http://localhost:8080/api/navigation/v1/systems/X1-FQ86/waypoints
 
 # Explicit refresh for a system
 curl -X POST -H "Authorization: Bearer <token>" \
-     http://localhost:8080/api/v1/systems/X1-FQ86/waypoints/refresh
+     http://localhost:8080/api/navigation/v1/systems/X1-FQ86/waypoints/refresh
 ```
 
 ### Response format

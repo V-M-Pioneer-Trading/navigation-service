@@ -22,7 +22,7 @@ import java.util.Map;
  * never stored by this service.
  */
 @RestController
-@RequestMapping("/api/v1")
+@RequestMapping("/api/navigation/v1")
 @Tag(name = "Waypoints", description = "Waypoint lookup and cache management")
 public class WaypointController {
 
