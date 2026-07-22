@@ -12,7 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/v1")
+@RequestMapping("/api/navigation/v1")
 @Tag(name = "Market", description = "Market lookup and cache management")
 public class MarketController {
 
