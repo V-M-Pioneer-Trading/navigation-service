@@ -19,4 +19,11 @@ class HealthControllerTest {
                .andExpect(status().isOk())
                .andExpect(jsonPath("$.status").value("ok"));
     }
+
+    @Test
+    void health_returnsOkStatus_underApiNavigationPrefix() throws Exception {
+        mockMvc.perform(get("/api/navigation/health"))
+               .andExpect(status().isOk())
+               .andExpect(jsonPath("$.status").value("ok"));
+    }
 }
