@@ -44,10 +44,10 @@ public class MarketController {
             @PathVariable String symbol,
             @Parameter(description = "Bypass cache and re-fetch from SpaceTraders")
             @RequestParam(defaultValue = "false") boolean forceRefresh,
-            @RequestHeader("Authorization") String authorization,
+            @RequestHeader(value = "X-SpaceTraders-Token", required = false) String spaceTradersToken,
             @RequestHeader(value = "X-Priority", required = false) String priority) {
 
-        JsonNode data = marketService.getMarket(symbol, authorization, priority, forceRefresh);
+        JsonNode data = marketService.getMarket(symbol, WaypointController.bearer(spaceTradersToken), priority, forceRefresh);
         return ResponseEntity.ok(data);
     }
 
@@ -65,10 +65,10 @@ public class MarketController {
     public ResponseEntity<JsonNode> refreshMarket(
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")
             @PathVariable String symbol,
-            @RequestHeader("Authorization") String authorization,
+            @RequestHeader(value = "X-SpaceTraders-Token", required = false) String spaceTradersToken,
             @RequestHeader(value = "X-Priority", required = false) String priority) {
 
-        JsonNode data = marketService.refreshMarket(symbol, authorization, priority);
+        JsonNode data = marketService.refreshMarket(symbol, WaypointController.bearer(spaceTradersToken), priority);
         return ResponseEntity.ok(data);
     }
 }

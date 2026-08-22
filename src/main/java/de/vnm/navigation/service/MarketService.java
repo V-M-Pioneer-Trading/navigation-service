@@ -50,6 +50,7 @@ public class MarketService {
             }
         }
 
+        WaypointService.requireCredentialForLiveFetch(authHeader, waypointSymbol);
         log.debug("Cache miss for market {} — fetching from SpaceTraders", waypointSymbol);
         String systemSymbol = WaypointService.extractSystemSymbol(waypointSymbol);
         JsonNode data = spaceTradersClient.fetchMarket(systemSymbol, waypointSymbol, authHeader, priority);

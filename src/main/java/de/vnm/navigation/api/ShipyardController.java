@@ -43,10 +43,10 @@ public class ShipyardController {
             @PathVariable String symbol,
             @Parameter(description = "Bypass cache and re-fetch from SpaceTraders")
             @RequestParam(defaultValue = "false") boolean forceRefresh,
-            @RequestHeader("Authorization") String authorization,
+            @RequestHeader(value = "X-SpaceTraders-Token", required = false) String spaceTradersToken,
             @RequestHeader(value = "X-Priority", required = false) String priority) {
 
-        JsonNode data = shipyardService.getShipyard(symbol, authorization, priority, forceRefresh);
+        JsonNode data = shipyardService.getShipyard(symbol, WaypointController.bearer(spaceTradersToken), priority, forceRefresh);
         return ResponseEntity.ok(data);
     }
 
@@ -64,10 +64,10 @@ public class ShipyardController {
     public ResponseEntity<JsonNode> refreshShipyard(
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")
             @PathVariable String symbol,
-            @RequestHeader("Authorization") String authorization,
+            @RequestHeader(value = "X-SpaceTraders-Token", required = false) String spaceTradersToken,
             @RequestHeader(value = "X-Priority", required = false) String priority) {
 
-        JsonNode data = shipyardService.refreshShipyard(symbol, authorization, priority);
+        JsonNode data = shipyardService.refreshShipyard(symbol, WaypointController.bearer(spaceTradersToken), priority);
         return ResponseEntity.ok(data);
     }
 }
