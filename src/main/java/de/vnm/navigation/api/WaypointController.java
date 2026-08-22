@@ -17,9 +17,11 @@ import java.util.Map;
 /**
  * REST API for waypoint data.
  *
- * <p>All endpoints accept an {@code Authorization: Bearer <token>} header that is
- * forwarded to the SpaceTraders API when an upstream fetch is needed. The token is
- * never stored by this service.
+ * <p>All endpoints accept an optional {@code X-SpaceTraders-Token} header —
+ * separate from {@code Authorization}, which other services now reserve for
+ * a Clerk session (auth-design.md decision 18). Present, it's forwarded to
+ * SpaceTraders when an upstream fetch is needed; absent, a request is served
+ * from cache only. The token is never stored by this service.
  */
 @RestController
 @RequestMapping("/api/navigation/v1")
@@ -30,6 +32,11 @@ public class WaypointController {
 
     public WaypointController(WaypointService waypointService) {
         this.waypointService = waypointService;
+    }
+
+    /** {@code X-SpaceTraders-Token} carries a bare token; SpaceTraders wants the full header. */
+    static String bearer(String spaceTradersToken) {
+        return spaceTradersToken == null ? null : "Bearer " + spaceTradersToken;
     }
 
     // ── Single waypoint ───────────────────────────────────────────────────────
@@ -55,10 +62,10 @@ public class WaypointController {
             @PathVariable String symbol,
             @Parameter(description = "Bypass cache and re-fetch from SpaceTraders")
             @RequestParam(defaultValue = "false") boolean forceRefresh,
-            @RequestHeader("Authorization") String authorization,
+            @RequestHeader(value = "X-SpaceTraders-Token", required = false) String spaceTradersToken,
             @RequestHeader(value = "X-Priority", required = false) String priority) {
 
-        JsonNode data = waypointService.getWaypoint(symbol, authorization, priority, forceRefresh);
+        JsonNode data = waypointService.getWaypoint(symbol, bearer(spaceTradersToken), priority, forceRefresh);
         return ResponseEntity.ok(data);
     }
 
@@ -76,10 +83,10 @@ public class WaypointController {
     public ResponseEntity<JsonNode> refreshWaypoint(
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")
             @PathVariable String symbol,
-            @RequestHeader("Authorization") String authorization,
+            @RequestHeader(value = "X-SpaceTraders-Token", required = false) String spaceTradersToken,
             @RequestHeader(value = "X-Priority", required = false) String priority) {
 
-        JsonNode data = waypointService.refreshWaypoint(symbol, authorization, priority);
+        JsonNode data = waypointService.refreshWaypoint(symbol, bearer(spaceTradersToken), priority);
         return ResponseEntity.ok(data);
     }
 
@@ -104,11 +111,11 @@ public class WaypointController {
             @PathVariable String systemSymbol,
             @Parameter(description = "Bypass cache and re-fetch all waypoints for the system")
             @RequestParam(defaultValue = "false") boolean forceRefresh,
-            @RequestHeader("Authorization") String authorization,
+            @RequestHeader(value = "X-SpaceTraders-Token", required = false) String spaceTradersToken,
             @RequestHeader(value = "X-Priority", required = false) String priority) {
 
         List<JsonNode> waypoints =
-                waypointService.getWaypointsBySystem(systemSymbol, authorization, priority, forceRefresh);
+                waypointService.getWaypointsBySystem(systemSymbol, bearer(spaceTradersToken), priority, forceRefresh);
         return ResponseEntity.ok(Map.of("data", waypoints, "total", waypoints.size()));
     }
 
@@ -125,11 +132,11 @@ public class WaypointController {
     public ResponseEntity<Map<String, Object>> refreshWaypointsBySystem(
             @Parameter(description = "System symbol, e.g. X1-FQ86")
             @PathVariable String systemSymbol,
-            @RequestHeader("Authorization") String authorization,
+            @RequestHeader(value = "X-SpaceTraders-Token", required = false) String spaceTradersToken,
             @RequestHeader(value = "X-Priority", required = false) String priority) {
 
         List<JsonNode> waypoints =
-                waypointService.refreshWaypointsBySystem(systemSymbol, authorization, priority);
+                waypointService.refreshWaypointsBySystem(systemSymbol, bearer(spaceTradersToken), priority);
         return ResponseEntity.ok(Map.of("data", waypoints, "total", waypoints.size()));
     }
 }

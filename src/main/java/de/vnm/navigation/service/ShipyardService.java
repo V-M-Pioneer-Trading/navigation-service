@@ -47,6 +47,7 @@ public class ShipyardService {
             }
         }
 
+        WaypointService.requireCredentialForLiveFetch(authHeader, waypointSymbol);
         log.debug("Cache miss for shipyard {} — fetching from SpaceTraders", waypointSymbol);
         String systemSymbol = WaypointService.extractSystemSymbol(waypointSymbol);
         JsonNode data = spaceTradersClient.fetchShipyard(systemSymbol, waypointSymbol, authHeader, priority);

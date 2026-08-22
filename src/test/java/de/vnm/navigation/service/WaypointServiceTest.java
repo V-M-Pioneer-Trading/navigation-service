@@ -86,6 +86,43 @@ class WaypointServiceTest {
         assertThat(stored.getSystemSymbol()).isEqualTo(SYSTEM);
     }
 
+    // ── anonymous callers (auth-design.md decision 18) ──────────────────────
+    // No credential is a legitimate request, not a rejected one: a cache hit
+    // needs nothing at all, and only a miss (nothing to serve without calling
+    // upstream) turns into a 401.
+
+    @Test
+    void getWaypoint_cacheHit_noAuthHeaderAtAll_stillSucceeds() throws Exception {
+        WaypointEntity cached = waypointEntity(SYMBOL, SYSTEM, """
+                {"symbol":"X1-FQ86-B29","type":"ASTEROID","systemSymbol":"X1-FQ86","x":10,"y":20}""");
+        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(cached));
+
+        JsonNode result = service.getWaypoint(SYMBOL, null, null, false);
+
+        assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
+        verifyNoInteractions(spaceTradersClient);
+    }
+
+    @Test
+    void getWaypoint_cacheMiss_noAuthHeader_throwsUnauthorizedWithoutCallingUpstream() {
+        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getWaypoint(SYMBOL, null, null, false))
+                .isInstanceOf(UpstreamException.class)
+                .satisfies(e -> assertThat(((UpstreamException) e).getStatus())
+                        .isEqualTo(HttpStatus.UNAUTHORIZED));
+        verifyNoInteractions(spaceTradersClient);
+    }
+
+    @Test
+    void getWaypoint_forceRefresh_noAuthHeader_throwsUnauthorized() {
+        assertThatThrownBy(() -> service.getWaypoint(SYMBOL, "", null, true))
+                .isInstanceOf(UpstreamException.class)
+                .satisfies(e -> assertThat(((UpstreamException) e).getStatus())
+                        .isEqualTo(HttpStatus.UNAUTHORIZED));
+        verifyNoInteractions(spaceTradersClient);
+    }
+
     // ── forceRefresh path ────────────────────────────────────────────────────
 
     @Test

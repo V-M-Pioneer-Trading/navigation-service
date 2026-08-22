@@ -26,8 +26,12 @@ import java.util.Optional;
  * </ul>
  *
  * <h3>Auth token handling</h3>
- * The caller's {@code Authorization} header is passed through to SpaceTraders
- * on upstream requests and is never persisted.
+ * The caller's {@code X-SpaceTraders-Token} (as a full {@code Authorization}
+ * header value, built by the controller) is passed through to SpaceTraders on
+ * upstream requests and is never persisted. It is optional: a cache hit needs
+ * no credential at all, which is what makes this service's reads public
+ * (auth-design.md decision 2/decision 18) — the credential is required only
+ * when a live fetch is actually needed.
  */
 @Service
 public class WaypointService {
@@ -62,6 +66,7 @@ public class WaypointService {
             }
         }
 
+        requireCredentialForLiveFetch(authHeader, symbol);
         log.debug("Cache miss for waypoint {} — fetching from SpaceTraders", symbol);
         String systemSymbol = extractSystemSymbol(symbol);
         JsonNode data = spaceTradersClient.fetchWaypoint(systemSymbol, symbol, authHeader, priority);
@@ -89,6 +94,7 @@ public class WaypointService {
             }
         }
 
+        requireCredentialForLiveFetch(authHeader, systemSymbol);
         log.debug("Cache miss for system {} — fetching all waypoints from SpaceTraders",
                 systemSymbol);
         List<JsonNode> fetched = spaceTradersClient.fetchWaypointsBySystem(systemSymbol, authHeader, priority);
@@ -115,6 +121,18 @@ public class WaypointService {
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
+
+    /**
+     * An anonymous caller gets the cache and nothing else — there is no
+     * credential to make a live SpaceTraders call with, so a cache miss for
+     * them is a 401, not a 502 from calling upstream with a null header.
+     */
+    static void requireCredentialForLiveFetch(String authHeader, String context) {
+        if (authHeader == null || authHeader.isBlank()) {
+            throw new UpstreamException(HttpStatus.UNAUTHORIZED,
+                    "No cached data for " + context + " and no SpaceTraders credential to fetch it live");
+        }
+    }
 
     /** Extract system symbol from a waypoint symbol. {@code X1-FQ86-B29} → {@code X1-FQ86}. */
     static String extractSystemSymbol(String waypointSymbol) {

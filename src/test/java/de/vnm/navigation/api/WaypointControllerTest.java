@@ -30,6 +30,7 @@ class WaypointControllerTest {
 
     @MockBean WaypointService waypointService;
 
+    private static final String TOKEN = "test-token";
     private static final String AUTH = "Bearer test-token";
     private static final String SYMBOL = "X1-FQ86-B29";
     private static final String SYSTEM = "X1-FQ86";
@@ -43,7 +44,7 @@ class WaypointControllerTest {
         when(waypointService.getWaypoint(eq(SYMBOL), eq(AUTH), isNull(), eq(false))).thenReturn(waypointJson);
 
         mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL)
-                        .header("Authorization", AUTH))
+                        .header("X-SpaceTraders-Token", TOKEN))
                .andExpect(status().isOk())
                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                .andExpect(jsonPath("$.symbol").value(SYMBOL));
@@ -57,7 +58,7 @@ class WaypointControllerTest {
 
         mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL)
                         .param("forceRefresh", "true")
-                        .header("Authorization", AUTH))
+                        .header("X-SpaceTraders-Token", TOKEN))
                .andExpect(status().isOk());
 
         verify(waypointService).getWaypoint(SYMBOL, AUTH, null, true);
@@ -69,7 +70,7 @@ class WaypointControllerTest {
                 .thenThrow(new UpstreamException(HttpStatus.NOT_FOUND, "Waypoint not found"));
 
         mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL)
-                        .header("Authorization", AUTH))
+                        .header("X-SpaceTraders-Token", TOKEN))
                .andExpect(status().isNotFound());
     }
 
@@ -79,7 +80,32 @@ class WaypointControllerTest {
                 .thenThrow(new UpstreamException(HttpStatus.UNAUTHORIZED, "Invalid token"));
 
         mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL)
-                        .header("Authorization", AUTH))
+                        .header("X-SpaceTraders-Token", TOKEN))
+               .andExpect(status().isUnauthorized());
+    }
+
+    // ── anonymous requests (auth-design.md decision 18) ──────────────────────────────────
+    // No X-SpaceTraders-Token at all is a legitimate request, not a rejected one — the
+    // controller must pass a null credential through rather than 400 on a missing header,
+    // and the service decides cache-hit-vs-401 from there.
+
+    @Test
+    void getWaypoint_noTokenAtAll_stillReachesTheService() throws Exception {
+        JsonNode waypointJson = objectMapper.readTree("""
+                {"symbol":"X1-FQ86-B29","type":"ASTEROID","x":10,"y":20}""");
+        when(waypointService.getWaypoint(eq(SYMBOL), isNull(), isNull(), eq(false))).thenReturn(waypointJson);
+
+        mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL))
+               .andExpect(status().isOk())
+               .andExpect(jsonPath("$.symbol").value(SYMBOL));
+    }
+
+    @Test
+    void getWaypoint_noTokenAndCacheMiss_propagatesUnauthorizedFromService() throws Exception {
+        when(waypointService.getWaypoint(eq(SYMBOL), isNull(), any(), anyBoolean()))
+                .thenThrow(new UpstreamException(HttpStatus.UNAUTHORIZED, "no cached data and no credential"));
+
+        mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL))
                .andExpect(status().isUnauthorized());
     }
 
@@ -92,7 +118,7 @@ class WaypointControllerTest {
         when(waypointService.refreshWaypoint(eq(SYMBOL), eq(AUTH), isNull())).thenReturn(waypointJson);
 
         mockMvc.perform(post("/api/navigation/v1/waypoints/{symbol}/refresh", SYMBOL)
-                        .header("Authorization", AUTH))
+                        .header("X-SpaceTraders-Token", TOKEN))
                .andExpect(status().isOk())
                .andExpect(jsonPath("$.symbol").value(SYMBOL));
     }
@@ -109,7 +135,7 @@ class WaypointControllerTest {
                 .thenReturn(List.of(w1, w2));
 
         mockMvc.perform(get("/api/navigation/v1/systems/{systemSymbol}/waypoints", SYSTEM)
-                        .header("Authorization", AUTH))
+                        .header("X-SpaceTraders-Token", TOKEN))
                .andExpect(status().isOk())
                .andExpect(jsonPath("$.total").value(2))
                .andExpect(jsonPath("$.data[0].symbol").value("X1-FQ86-B29"))
@@ -123,7 +149,7 @@ class WaypointControllerTest {
 
         mockMvc.perform(get("/api/navigation/v1/systems/{systemSymbol}/waypoints", SYSTEM)
                         .param("forceRefresh", "true")
-                        .header("Authorization", AUTH))
+                        .header("X-SpaceTraders-Token", TOKEN))
                .andExpect(status().isOk());
 
         verify(waypointService).getWaypointsBySystem(SYSTEM, AUTH, null, true);
@@ -139,7 +165,7 @@ class WaypointControllerTest {
                 .thenReturn(List.of(w1));
 
         mockMvc.perform(post("/api/navigation/v1/systems/{systemSymbol}/waypoints/refresh", SYSTEM)
-                        .header("Authorization", AUTH))
+                        .header("X-SpaceTraders-Token", TOKEN))
                .andExpect(status().isOk())
                .andExpect(jsonPath("$.total").value(1));
     }
@@ -159,7 +185,7 @@ class WaypointControllerTest {
                 .thenReturn(waypointJson);
 
         mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL)
-                        .header("Authorization", AUTH)
+                        .header("X-SpaceTraders-Token", TOKEN)
                         .header("X-Priority", "interactive"))
                .andExpect(status().isOk());
 
@@ -174,7 +200,7 @@ class WaypointControllerTest {
                 .thenReturn(waypointJson);
 
         mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL)
-                        .header("Authorization", AUTH))
+                        .header("X-SpaceTraders-Token", TOKEN))
                .andExpect(status().isOk());
 
         verify(waypointService).getWaypoint(SYMBOL, AUTH, null, false);
