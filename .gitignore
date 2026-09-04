@@ -34,3 +34,6 @@ out/
 
 ### VS Code ###
 .vscode/
+### Local runtime ###
+# SQLite database created by bootRun (SQLITE_DB_PATH default)
+data/

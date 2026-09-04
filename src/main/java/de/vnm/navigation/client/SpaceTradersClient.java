@@ -2,14 +2,16 @@ package de.vnm.navigation.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import de.vnm.navigation.exception.UpstreamException;
+import de.vnm.navigation.exception.ApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,23 +19,26 @@ import java.util.List;
 /**
  * HTTP client for the SpaceTraders v2 API, routed through st-gateway's shared
  * rate budget (meta#1/meta#7) rather than hitting SpaceTraders directly.
- * <p>
- * The caller's {@code Authorization: Bearer <token>} header is forwarded on every
- * request and is never stored by this service.
- * <p>
- * Every fetch* method takes the caller's own {@code X-Priority} declaration and
- * forwards it through to st-gateway's priority queue (meta#37) —
- * command-interface (browser) sends {@code interactive}, automation-service
- * (autopilot) sends nothing. {@link #normalizePriority} degrades anything but
- * exactly {@code interactive} to {@code background} so a missing or malformed
- * header never accidentally jumps the queue.
+ *
+ * <p>Every request carries the caller's SpaceTraders token as
+ * {@code Authorization: Bearer <token>} and the caller's own {@link Priority}
+ * declaration as {@code X-Priority} (meta#37). The token is never stored.
+ *
+ * <p>Every failure mode leaves as an {@link ApiException} with a deliberate status:
+ * an upstream 4xx keeps its status, an upstream 5xx and an unreachable gateway both
+ * become {@code 502}, and so does any response this service cannot read. Nothing here
+ * returns {@code null} or an empty node to mean "something went wrong".
  */
 @Component
 public class SpaceTradersClient {
 
     private static final Logger log = LoggerFactory.getLogger(SpaceTradersClient.class);
 
+    /** SpaceTraders caps {@code limit} at 20 waypoints per page. */
     private static final int PAGE_LIMIT = 20;
+
+    /** Hard stop so a pager that never signals the end cannot spin forever. */
+    private static final int MAX_PAGES = 500;
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -46,169 +51,131 @@ public class SpaceTradersClient {
         this.objectMapper = objectMapper;
     }
 
-    private static String normalizePriority(String priority) {
-        return "interactive".equals(priority) ? "interactive" : "background";
-    }
-
     /**
-     * Fetch a single waypoint from SpaceTraders.
+     * Fetch a single waypoint.
      *
      * @param systemSymbol   e.g. {@code X1-FQ86}
      * @param waypointSymbol e.g. {@code X1-FQ86-B29}
-     * @param authHeader     full {@code Authorization} header value (e.g. {@code Bearer <token>})
-     * @param priority       caller's {@code X-Priority} declaration ({@code interactive} or anything else)
-     * @return the waypoint {@link JsonNode} as returned by SpaceTraders
+     * @param token          bare SpaceTraders token; sent as {@code Bearer}, never stored
      */
-    public JsonNode fetchWaypoint(String systemSymbol, String waypointSymbol, String authHeader, String priority) {
-        log.debug("Fetching waypoint {} from SpaceTraders", waypointSymbol);
-        String body = restClient.get()
-                .uri("/systems/{system}/waypoints/{waypoint}", systemSymbol, waypointSymbol)
-                .header("Authorization", authHeader)
-                .header("X-Priority", normalizePriority(priority))
-                .retrieve()
-                .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                    HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());
-                    String msg = "SpaceTraders returned " + res.getStatusCode() +
-                                 " for waypoint " + waypointSymbol;
-                    throw new UpstreamException(
-                            status != null ? status : HttpStatus.BAD_GATEWAY, msg);
-                })
-                .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                    throw new UpstreamException(HttpStatus.BAD_GATEWAY,
-                            "SpaceTraders upstream error: " + res.getStatusCode());
-                })
-                .body(String.class);
+    public JsonNode fetchWaypoint(String systemSymbol, String waypointSymbol, String token, Priority priority) {
+        return fetchOne("/systems/{system}/waypoints/{waypoint}",
+                "waypoint " + waypointSymbol, token, priority, systemSymbol, waypointSymbol);
+    }
 
-        return parseData(body, waypointSymbol);
+    /** Fetch market data (imports/exports/prices) for a waypoint. */
+    public JsonNode fetchMarket(String systemSymbol, String waypointSymbol, String token, Priority priority) {
+        return fetchOne("/systems/{system}/waypoints/{waypoint}/market",
+                "market at " + waypointSymbol, token, priority, systemSymbol, waypointSymbol);
+    }
+
+    /** Fetch shipyard data (ships for sale) for a waypoint. */
+    public JsonNode fetchShipyard(String systemSymbol, String waypointSymbol, String token, Priority priority) {
+        return fetchOne("/systems/{system}/waypoints/{waypoint}/shipyard",
+                "shipyard at " + waypointSymbol, token, priority, systemSymbol, waypointSymbol);
     }
 
     /**
-     * Fetch market data for a waypoint from SpaceTraders.
+     * Fetch every waypoint in a system, following pagination.
      *
-     * @param systemSymbol   e.g. {@code X1-FQ86}
-     * @param waypointSymbol e.g. {@code X1-FQ86-B29}
-     * @param authHeader     full {@code Authorization} header value (e.g. {@code Bearer <token>})
+     * <p>{@code meta.total} is treated as advisory: responses that omit it used to end the
+     * walk after a single page and silently return a truncated system. The end of the list
+     * is a short page; {@code meta.total}, when present, only lets the walk stop one request
+     * earlier.
      */
-    public JsonNode fetchMarket(String systemSymbol, String waypointSymbol, String authHeader, String priority) {
-        log.debug("Fetching market for {} from SpaceTraders", waypointSymbol);
-        String body = restClient.get()
-                .uri("/systems/{system}/waypoints/{waypoint}/market", systemSymbol, waypointSymbol)
-                .header("Authorization", authHeader)
-                .header("X-Priority", normalizePriority(priority))
-                .retrieve()
-                .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                    HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());
-                    String msg = "SpaceTraders returned " + res.getStatusCode() +
-                                 " for market at " + waypointSymbol;
-                    throw new UpstreamException(
-                            status != null ? status : HttpStatus.BAD_GATEWAY, msg);
-                })
-                .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                    throw new UpstreamException(HttpStatus.BAD_GATEWAY,
-                            "SpaceTraders upstream error: " + res.getStatusCode());
-                })
-                .body(String.class);
+    public List<JsonNode> fetchWaypointsBySystem(String systemSymbol, String token, Priority priority) {
+        String context = "system " + systemSymbol;
+        log.debug("Fetching all waypoints for {}", context);
 
-        return parseData(body, waypointSymbol);
-    }
-
-    /**
-     * Fetch shipyard data for a waypoint from SpaceTraders.
-     *
-     * @param systemSymbol   e.g. {@code X1-FQ86}
-     * @param waypointSymbol e.g. {@code X1-FQ86-B29}
-     * @param authHeader     full {@code Authorization} header value (e.g. {@code Bearer <token>})
-     */
-    public JsonNode fetchShipyard(String systemSymbol, String waypointSymbol, String authHeader, String priority) {
-        log.debug("Fetching shipyard for {} from SpaceTraders", waypointSymbol);
-        String body = restClient.get()
-                .uri("/systems/{system}/waypoints/{waypoint}/shipyard", systemSymbol, waypointSymbol)
-                .header("Authorization", authHeader)
-                .header("X-Priority", normalizePriority(priority))
-                .retrieve()
-                .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                    HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());
-                    String msg = "SpaceTraders returned " + res.getStatusCode() +
-                                 " for shipyard at " + waypointSymbol;
-                    throw new UpstreamException(
-                            status != null ? status : HttpStatus.BAD_GATEWAY, msg);
-                })
-                .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                    throw new UpstreamException(HttpStatus.BAD_GATEWAY,
-                            "SpaceTraders upstream error: " + res.getStatusCode());
-                })
-                .body(String.class);
-
-        return parseData(body, waypointSymbol);
-    }
-
-    /**
-     * Fetch all waypoints for a system, following pagination automatically.
-     *
-     * @param systemSymbol e.g. {@code X1-FQ86}
-     * @param authHeader   full {@code Authorization} header value
-     * @return list of waypoint {@link JsonNode}s
-     */
-    public List<JsonNode> fetchWaypointsBySystem(String systemSymbol, String authHeader, String priority) {
-        log.debug("Fetching all waypoints for system {} from SpaceTraders", systemSymbol);
         List<JsonNode> all = new ArrayList<>();
         int page = 1;
-        int total;
+        boolean morePages;
 
         do {
             final int currentPage = page;
-            String body = restClient.get()
+            String body = exchange(restClient.get()
                     .uri(u -> u.path("/systems/{system}/waypoints")
                                .queryParam("page", currentPage)
                                .queryParam("limit", PAGE_LIMIT)
-                               .build(systemSymbol))
-                    .header("Authorization", authHeader)
-                    .header("X-Priority", normalizePriority(priority))
-                    .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                        HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());
-                        throw new UpstreamException(
-                                status != null ? status : HttpStatus.BAD_GATEWAY,
-                                "SpaceTraders returned " + res.getStatusCode() +
-                                " for system " + systemSymbol);
-                    })
-                    .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                        throw new UpstreamException(HttpStatus.BAD_GATEWAY,
-                                "SpaceTraders upstream error: " + res.getStatusCode());
-                    })
-                    .body(String.class);
+                               .build(systemSymbol)),
+                    context, token, priority);
 
-            try {
-                JsonNode root = objectMapper.readTree(body);
-                JsonNode data = root.path("data");
-                JsonNode meta = root.path("meta");
-
-                if (!data.isArray()) {
-                    throw new UpstreamException(HttpStatus.BAD_GATEWAY,
-                            "Unexpected response from SpaceTraders for system " + systemSymbol);
-                }
-                data.forEach(all::add);
-
-                total = meta.path("total").asInt(0);
-                page++;
-            } catch (UpstreamException e) {
-                throw e;
-            } catch (Exception e) {
-                throw new UpstreamException(HttpStatus.BAD_GATEWAY,
-                        "Failed to parse SpaceTraders response: " + e.getMessage());
+            JsonNode root = readTree(body, context);
+            JsonNode data = root.path("data");
+            if (!data.isArray()) {
+                throw new ApiException(HttpStatus.BAD_GATEWAY,
+                        "SpaceTraders response for " + context + " had no data array");
             }
-        } while ((long) (page - 1) * PAGE_LIMIT < total);
+            data.forEach(all::add);
 
-        log.debug("Fetched {} waypoints for system {}", all.size(), systemSymbol);
+            int total = root.path("meta").path("total").asInt(0);
+            boolean shortPage = data.size() < PAGE_LIMIT;
+            boolean haveAllPerMeta = total > 0 && all.size() >= total;
+            morePages = !shortPage && !haveAllPerMeta && page < MAX_PAGES;
+            page++;
+        } while (morePages);
+
+        if (page > MAX_PAGES) {
+            log.warn("Stopped paging {} at the {}-page cap with {} waypoints collected",
+                    context, MAX_PAGES, all.size());
+        }
+        log.debug("Fetched {} waypoints for {}", all.size(), context);
         return all;
     }
 
-    private JsonNode parseData(String body, String context) {
+    // ── shared request plumbing ──────────────────────────────────────────────
+
+    private JsonNode fetchOne(String path, String context, String token, Priority priority, Object... uriVars) {
+        log.debug("Fetching {} from SpaceTraders", context);
+        String body = exchange(restClient.get().uri(path, uriVars), context, token, priority);
+        return requireData(body, context);
+    }
+
+    private String exchange(RestClient.RequestHeadersSpec<?> spec, String context,
+                            String token, Priority priority) {
         try {
-            JsonNode root = objectMapper.readTree(body);
-            return root.path("data");
+            return spec.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .header("X-Priority", priority.wireValue())
+                    .retrieve()
+                    .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
+                        HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());
+                        throw new ApiException(status != null ? status : HttpStatus.BAD_GATEWAY,
+                                "SpaceTraders returned " + res.getStatusCode() + " for " + context);
+                    })
+                    .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
+                        throw new ApiException(HttpStatus.BAD_GATEWAY,
+                                "SpaceTraders upstream error: " + res.getStatusCode() + " for " + context);
+                    })
+                    .body(String.class);
+        } catch (ApiException e) {
+            throw e;
+        } catch (RestClientException e) {
+            // Connection refused, DNS failure, read timeout: st-gateway is not answering.
+            // Without this the request would surface as an undifferentiated 500.
+            throw new ApiException(HttpStatus.BAD_GATEWAY,
+                    "SpaceTraders gateway unreachable while fetching " + context + ": " + e.getMessage());
+        }
+    }
+
+    /** The {@code data} envelope every single-resource SpaceTraders response carries. */
+    private JsonNode requireData(String body, String context) {
+        JsonNode data = readTree(body, context).path("data");
+        if (data.isMissingNode() || data.isNull()) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY,
+                    "SpaceTraders response for " + context + " carried no data payload");
+        }
+        return data;
+    }
+
+    private JsonNode readTree(String body, String context) {
+        if (body == null || body.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY,
+                    "Empty response from SpaceTraders for " + context);
+        }
+        try {
+            return objectMapper.readTree(body);
         } catch (Exception e) {
-            throw new UpstreamException(HttpStatus.BAD_GATEWAY,
+            throw new ApiException(HttpStatus.BAD_GATEWAY,
                     "Failed to parse SpaceTraders response for " + context + ": " + e.getMessage());
         }
     }

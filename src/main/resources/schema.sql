@@ -27,3 +27,11 @@ CREATE TABLE IF NOT EXISTS shipyards (
 );
 
 CREATE INDEX IF NOT EXISTS idx_shipyards_system_symbol ON shipyards(system_symbol);
+
+-- Marks systems whose full waypoint listing has been walked and cached. Kept separate
+-- from `waypoints` because a row there may come from a single-waypoint lookup, which
+-- says nothing about whether the rest of the system is cached.
+CREATE TABLE IF NOT EXISTS system_fetches (
+    system_symbol TEXT NOT NULL PRIMARY KEY,
+    fetched_at    TEXT NOT NULL
+);

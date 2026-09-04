@@ -7,6 +7,7 @@ plugins {
 
 group = "de.vnm"
 version = "0.0.1"
+description = "Read-through cache for SpaceTraders waypoint, market and shipyard data"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_21
@@ -32,4 +33,11 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+// Only the executable jar is ever deployed; leaving the plain library jar enabled means
+// build/libs holds two jars, and the Dockerfile's `COPY build/libs/*.jar app.jar` breaks
+// the moment anything runs `build` instead of `bootJar`.
+tasks.named<Jar>("jar") {
+    enabled = false
 }

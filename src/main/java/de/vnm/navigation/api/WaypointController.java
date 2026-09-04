@@ -1,6 +1,7 @@
 package de.vnm.navigation.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import de.vnm.navigation.client.Priority;
 import de.vnm.navigation.service.WaypointService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -17,11 +18,9 @@ import java.util.Map;
 /**
  * REST API for waypoint data.
  *
- * <p>All endpoints accept an optional {@code X-SpaceTraders-Token} header —
- * separate from {@code Authorization}, which other services now reserve for
- * a Clerk session (auth-design.md decision 18). Present, it's forwarded to
- * SpaceTraders when an upstream fetch is needed; absent, a request is served
- * from cache only. The token is never stored by this service.
+ * <p>All endpoints accept an optional {@link ApiHeaders#SPACETRADERS_TOKEN} header.
+ * Present, it is forwarded to SpaceTraders when an upstream fetch is needed; absent, the
+ * request is served from cache only. The token is never stored by this service.
  */
 @RestController
 @RequestMapping("/api/navigation/v1")
@@ -34,11 +33,6 @@ public class WaypointController {
         this.waypointService = waypointService;
     }
 
-    /** {@code X-SpaceTraders-Token} carries a bare token; SpaceTraders wants the full header. */
-    static String bearer(String spaceTradersToken) {
-        return spaceTradersToken == null ? null : "Bearer " + spaceTradersToken;
-    }
-
     // ── Single waypoint ───────────────────────────────────────────────────────
 
     @Operation(
@@ -49,7 +43,8 @@ public class WaypointController {
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Waypoint data"),
-        @ApiResponse(responseCode = "401", description = "Invalid or missing SpaceTraders token",
+        @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
+        @ApiResponse(responseCode = "401", description = "Not cached and no SpaceTraders token supplied",
                      content = @Content),
         @ApiResponse(responseCode = "404", description = "Waypoint not found in SpaceTraders",
                      content = @Content),
@@ -62,11 +57,11 @@ public class WaypointController {
             @PathVariable String symbol,
             @Parameter(description = "Bypass cache and re-fetch from SpaceTraders")
             @RequestParam(defaultValue = "false") boolean forceRefresh,
-            @RequestHeader(value = "X-SpaceTraders-Token", required = false) String spaceTradersToken,
-            @RequestHeader(value = "X-Priority", required = false) String priority) {
+            @RequestHeader(value = ApiHeaders.SPACETRADERS_TOKEN, required = false) String token,
+            @RequestHeader(value = ApiHeaders.PRIORITY, required = false) String priority) {
 
-        JsonNode data = waypointService.getWaypoint(symbol, bearer(spaceTradersToken), priority, forceRefresh);
-        return ResponseEntity.ok(data);
+        return ResponseEntity.ok(
+                waypointService.getWaypoint(symbol, token, Priority.from(priority), forceRefresh));
     }
 
     @Operation(
@@ -75,7 +70,8 @@ public class WaypointController {
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Updated waypoint data"),
-        @ApiResponse(responseCode = "401", description = "Invalid token", content = @Content),
+        @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
+        @ApiResponse(responseCode = "401", description = "No SpaceTraders token supplied", content = @Content),
         @ApiResponse(responseCode = "404", description = "Waypoint not found", content = @Content),
         @ApiResponse(responseCode = "502", description = "Upstream error", content = @Content)
     })
@@ -83,11 +79,11 @@ public class WaypointController {
     public ResponseEntity<JsonNode> refreshWaypoint(
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")
             @PathVariable String symbol,
-            @RequestHeader(value = "X-SpaceTraders-Token", required = false) String spaceTradersToken,
-            @RequestHeader(value = "X-Priority", required = false) String priority) {
+            @RequestHeader(value = ApiHeaders.SPACETRADERS_TOKEN, required = false) String token,
+            @RequestHeader(value = ApiHeaders.PRIORITY, required = false) String priority) {
 
-        JsonNode data = waypointService.refreshWaypoint(symbol, bearer(spaceTradersToken), priority);
-        return ResponseEntity.ok(data);
+        return ResponseEntity.ok(
+                waypointService.refreshWaypoint(symbol, token, Priority.from(priority)));
     }
 
     // ── System waypoints ──────────────────────────────────────────────────────
@@ -95,13 +91,15 @@ public class WaypointController {
     @Operation(
         summary = "List waypoints by system",
         description = """
-            Returns all waypoints for a system. Serves from local cache if any data exists; \
-            fetches all pages from SpaceTraders on first miss. Use `forceRefresh=true` to \
-            bypass the cache and re-fetch all waypoints for the system."""
+            Returns all waypoints for a system. Serves from local cache only once a complete \
+            walk of the system has been cached; otherwise fetches every page from SpaceTraders. \
+            Use `forceRefresh=true` to re-walk the system."""
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "List of waypoints"),
-        @ApiResponse(responseCode = "401", description = "Invalid token", content = @Content),
+        @ApiResponse(responseCode = "400", description = "Malformed system symbol", content = @Content),
+        @ApiResponse(responseCode = "401", description = "Not cached and no SpaceTraders token supplied",
+                     content = @Content),
         @ApiResponse(responseCode = "404", description = "System not found", content = @Content),
         @ApiResponse(responseCode = "502", description = "Upstream error", content = @Content)
     })
@@ -111,12 +109,11 @@ public class WaypointController {
             @PathVariable String systemSymbol,
             @Parameter(description = "Bypass cache and re-fetch all waypoints for the system")
             @RequestParam(defaultValue = "false") boolean forceRefresh,
-            @RequestHeader(value = "X-SpaceTraders-Token", required = false) String spaceTradersToken,
-            @RequestHeader(value = "X-Priority", required = false) String priority) {
+            @RequestHeader(value = ApiHeaders.SPACETRADERS_TOKEN, required = false) String token,
+            @RequestHeader(value = ApiHeaders.PRIORITY, required = false) String priority) {
 
-        List<JsonNode> waypoints =
-                waypointService.getWaypointsBySystem(systemSymbol, bearer(spaceTradersToken), priority, forceRefresh);
-        return ResponseEntity.ok(Map.of("data", waypoints, "total", waypoints.size()));
+        return ResponseEntity.ok(listBody(waypointService.getWaypointsBySystem(
+                systemSymbol, token, Priority.from(priority), forceRefresh)));
     }
 
     @Operation(
@@ -125,18 +122,23 @@ public class WaypointController {
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Updated list of waypoints"),
-        @ApiResponse(responseCode = "401", description = "Invalid token", content = @Content),
+        @ApiResponse(responseCode = "400", description = "Malformed system symbol", content = @Content),
+        @ApiResponse(responseCode = "401", description = "No SpaceTraders token supplied", content = @Content),
         @ApiResponse(responseCode = "502", description = "Upstream error", content = @Content)
     })
     @PostMapping("/systems/{systemSymbol}/waypoints/refresh")
     public ResponseEntity<Map<String, Object>> refreshWaypointsBySystem(
             @Parameter(description = "System symbol, e.g. X1-FQ86")
             @PathVariable String systemSymbol,
-            @RequestHeader(value = "X-SpaceTraders-Token", required = false) String spaceTradersToken,
-            @RequestHeader(value = "X-Priority", required = false) String priority) {
+            @RequestHeader(value = ApiHeaders.SPACETRADERS_TOKEN, required = false) String token,
+            @RequestHeader(value = ApiHeaders.PRIORITY, required = false) String priority) {
 
-        List<JsonNode> waypoints =
-                waypointService.refreshWaypointsBySystem(systemSymbol, bearer(spaceTradersToken), priority);
-        return ResponseEntity.ok(Map.of("data", waypoints, "total", waypoints.size()));
+        return ResponseEntity.ok(listBody(waypointService.refreshWaypointsBySystem(
+                systemSymbol, token, Priority.from(priority))));
+    }
+
+    /** {@code total} is the number of waypoints in this response, not SpaceTraders' page count. */
+    private static Map<String, Object> listBody(List<JsonNode> waypoints) {
+        return Map.of("data", waypoints, "total", waypoints.size());
     }
 }
