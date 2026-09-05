@@ -109,6 +109,25 @@ class MarketServiceTest {
         verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, TOKEN, Priority.BACKGROUND);
     }
 
+    /**
+     * Regression: a zero TTL was only "always stale" by arithmetic — {@code isFresh} asked
+     * whether the row predated {@code now - 0}, so a row stamped at or after now (a clock
+     * stepped backwards, a restored database) read as a cache hit on a service explicitly
+     * configured not to cache.
+     */
+    @Test
+    void zeroTtl_futureDatedRow_isStillRefetched() throws Exception {
+        MarketService alwaysStale = new MarketService(repository, spaceTradersClient, objectMapper, Duration.ZERO);
+        when(repository.findBySymbol(SYMBOL))
+                .thenReturn(Optional.of(marketEntity(Instant.now().plusSeconds(60).toString())));
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, TOKEN, Priority.BACKGROUND))
+                .thenReturn(upstreamMarket());
+
+        alwaysStale.get(SYMBOL, TOKEN, Priority.BACKGROUND, false);
+
+        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, TOKEN, Priority.BACKGROUND);
+    }
+
     /** A zero TTL means "never serve from cache", not "cache forever". */
     @Test
     void zeroTtl_alwaysRefetches() throws Exception {

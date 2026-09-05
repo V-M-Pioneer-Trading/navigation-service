@@ -3,6 +3,7 @@ package de.vnm.navigation.client;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.vnm.navigation.exception.ApiException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -45,6 +46,17 @@ class SpaceTradersClientTest {
         client = new SpaceTradersClient(builder, new ObjectMapper(), BASE);
     }
 
+    /**
+     * MockRestServiceServer only fails a request that does not match an expectation; a
+     * request that is never made goes unnoticed unless someone verifies. Doing it here
+     * covers every test in the class, including tests added later, and means a test that
+     * asserts only "this throws" still proves the call went out.
+     */
+    @AfterEach
+    void allExpectedRequestsWereMade() {
+        server.verify();
+    }
+
     // ── request shape ────────────────────────────────────────────────────────
 
     @Test
@@ -59,7 +71,6 @@ class SpaceTradersClientTest {
         JsonNode result = client.fetchWaypoint(SYSTEM, WAYPOINT, TOKEN, Priority.INTERACTIVE);
 
         assertThat(result.path("symbol").asText()).isEqualTo(WAYPOINT);
-        server.verify();
     }
 
     @Test
@@ -72,7 +83,6 @@ class SpaceTradersClientTest {
 
         client.fetchMarket(SYSTEM, WAYPOINT, TOKEN, Priority.BACKGROUND);
 
-        server.verify();
     }
 
     @Test
@@ -166,7 +176,6 @@ class SpaceTradersClientTest {
         List<JsonNode> all = client.fetchWaypointsBySystem(SYSTEM, TOKEN, Priority.BACKGROUND);
 
         assertThat(all).hasSize(23);
-        server.verify();
     }
 
     @Test
@@ -174,7 +183,6 @@ class SpaceTradersClientTest {
         expectPage(1, page(4, 4));
 
         assertThat(client.fetchWaypointsBySystem(SYSTEM, TOKEN, Priority.BACKGROUND)).hasSize(4);
-        server.verify();
     }
 
     /**
@@ -190,7 +198,6 @@ class SpaceTradersClientTest {
         List<JsonNode> all = client.fetchWaypointsBySystem(SYSTEM, TOKEN, Priority.BACKGROUND);
 
         assertThat(all).hasSize(23);
-        server.verify();
     }
 
     @Test

@@ -77,6 +77,9 @@ Each of these is stated so a violation is visible in a diff:
    reads as stale; a corrupt blob is a 500 that `forceRefresh` clears.
 9. **Only exactly `interactive` yields `Priority.INTERACTIVE`.** Everything else is
    `BACKGROUND`.
+10. **A zero TTL disables caching outright.** It is an explicit branch, never a consequence
+    of the timestamp comparison — a row stamped at or after "now" must not read as a hit on
+    a service configured not to cache.
 
 ## Critical sequences
 
@@ -144,6 +147,11 @@ Notes that will save time:
   whole class.
 - The Hikari pool is one connection. A test that holds a transaction open while querying
   through a second `JdbcTemplate` call will deadlock, not fail.
+- `SpaceTradersClientTest` verifies the mock server once, in `@AfterEach`, so every test —
+  including ones added later — asserts that the request it declared was actually made.
+  `MockRestServiceServer` only fails *unmatched* requests; a request never sent is invisible
+  without a `verify()`, which matters most for the tests whose only other assertion is
+  "this throws".
 
 ### Known flake patterns
 
@@ -156,7 +164,7 @@ Notes that will save time:
 - **`MockRestServiceServer` expectations are ordered.** A pagination test must declare
   `page=1` before `page=2`, and the full URL including query string has to match.
 
-No flaky test is currently known. The suite was run five consecutive times clean at 81
+No flaky test is currently known. The suite was run five consecutive times clean at 82
 tests when this file was written.
 
 ## Extension conventions

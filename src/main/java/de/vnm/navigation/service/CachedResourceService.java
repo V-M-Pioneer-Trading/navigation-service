@@ -81,6 +81,12 @@ public abstract class CachedResourceService {
         if (ttl == null) {
             return true;
         }
+        if (ttl.isZero()) {
+            // "Caching off" has to hold unconditionally. Deriving it from the comparison
+            // below would leave a row stamped at or after "now" — a clock stepped back, a
+            // restored database — reading as a hit on a service configured not to cache.
+            return false;
+        }
         Instant fetchedAt = CachedJson.fetchedAtOrNull(entity.getFetchedAt());
         return fetchedAt != null && !fetchedAt.isBefore(Instant.now().minus(ttl));
     }
