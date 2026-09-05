@@ -1,6 +1,7 @@
 package de.vnm.navigation.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import de.vnm.navigation.client.Priority;
 import de.vnm.navigation.service.ShipyardService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -30,7 +31,8 @@ public class ShipyardController {
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Shipyard data"),
-        @ApiResponse(responseCode = "401", description = "Invalid or missing SpaceTraders token",
+        @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
+        @ApiResponse(responseCode = "401", description = "Not cached and no SpaceTraders token supplied",
                      content = @Content),
         @ApiResponse(responseCode = "404", description = "Waypoint has no shipyard",
                      content = @Content),
@@ -43,11 +45,10 @@ public class ShipyardController {
             @PathVariable String symbol,
             @Parameter(description = "Bypass cache and re-fetch from SpaceTraders")
             @RequestParam(defaultValue = "false") boolean forceRefresh,
-            @RequestHeader(value = "X-SpaceTraders-Token", required = false) String spaceTradersToken,
-            @RequestHeader(value = "X-Priority", required = false) String priority) {
+            @RequestHeader(value = ApiHeaders.SPACETRADERS_TOKEN, required = false) String token,
+            @RequestHeader(value = ApiHeaders.PRIORITY, required = false) String priority) {
 
-        JsonNode data = shipyardService.getShipyard(symbol, WaypointController.bearer(spaceTradersToken), priority, forceRefresh);
-        return ResponseEntity.ok(data);
+        return ResponseEntity.ok(shipyardService.get(symbol, token, Priority.from(priority), forceRefresh));
     }
 
     @Operation(
@@ -56,7 +57,8 @@ public class ShipyardController {
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Updated shipyard data"),
-        @ApiResponse(responseCode = "401", description = "Invalid token", content = @Content),
+        @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
+        @ApiResponse(responseCode = "401", description = "No SpaceTraders token supplied", content = @Content),
         @ApiResponse(responseCode = "404", description = "Waypoint has no shipyard", content = @Content),
         @ApiResponse(responseCode = "502", description = "Upstream error", content = @Content)
     })
@@ -64,10 +66,9 @@ public class ShipyardController {
     public ResponseEntity<JsonNode> refreshShipyard(
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")
             @PathVariable String symbol,
-            @RequestHeader(value = "X-SpaceTraders-Token", required = false) String spaceTradersToken,
-            @RequestHeader(value = "X-Priority", required = false) String priority) {
+            @RequestHeader(value = ApiHeaders.SPACETRADERS_TOKEN, required = false) String token,
+            @RequestHeader(value = ApiHeaders.PRIORITY, required = false) String priority) {
 
-        JsonNode data = shipyardService.refreshShipyard(symbol, WaypointController.bearer(spaceTradersToken), priority);
-        return ResponseEntity.ok(data);
+        return ResponseEntity.ok(shipyardService.refresh(symbol, token, Priority.from(priority)));
     }
 }

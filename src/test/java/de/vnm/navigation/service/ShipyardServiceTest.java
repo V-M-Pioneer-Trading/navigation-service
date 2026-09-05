@@ -2,8 +2,9 @@ package de.vnm.navigation.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.vnm.navigation.client.Priority;
 import de.vnm.navigation.client.SpaceTradersClient;
-import de.vnm.navigation.exception.UpstreamException;
+import de.vnm.navigation.exception.ApiException;
 import de.vnm.navigation.model.LocationDataEntity;
 import de.vnm.navigation.repository.ShipyardRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +31,7 @@ class ShipyardServiceTest {
     ShipyardService service;
     ObjectMapper objectMapper = new ObjectMapper();
 
-    private static final String AUTH = "Bearer test-token";
+    private static final String TOKEN = "test-token";
     private static final String SYMBOL = "X1-FQ86-B29";
     private static final String SYSTEM = "X1-FQ86";
 
@@ -40,24 +41,32 @@ class ShipyardServiceTest {
     }
 
     @Test
-    void getShipyard_cacheHit_returnsDataWithoutCallingUpstream() {
-        LocationDataEntity cached = shipyardEntity();
-        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(cached));
+    void get_cacheHit_returnsDataWithoutCallingUpstream() {
+        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(shipyardEntity()));
 
-        JsonNode result = service.getShipyard(SYMBOL, AUTH, null, false);
+        JsonNode result = service.get(SYMBOL, TOKEN, Priority.BACKGROUND, false);
 
         assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
         verifyNoInteractions(spaceTradersClient);
     }
 
+    /** Shipyards have no TTL: a row from 2024 is still a hit. */
     @Test
-    void getShipyard_cacheMiss_fetchesFromUpstreamAndStores() throws Exception {
-        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.empty());
-        JsonNode upstream = objectMapper.readTree("""
-                {"symbol":"X1-FQ86-B29","shipTypes":[]}""");
-        when(spaceTradersClient.fetchShipyard(SYSTEM, SYMBOL, AUTH, null)).thenReturn(upstream);
+    void get_veryOldCacheRow_isStillServed() {
+        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(shipyardEntity()));
 
-        service.getShipyard(SYMBOL, AUTH, null, false);
+        service.get(SYMBOL, TOKEN, Priority.BACKGROUND, false);
+
+        verifyNoInteractions(spaceTradersClient);
+    }
+
+    @Test
+    void get_cacheMiss_fetchesFromUpstreamAndStores() throws Exception {
+        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.empty());
+        when(spaceTradersClient.fetchShipyard(SYSTEM, SYMBOL, TOKEN, Priority.BACKGROUND))
+                .thenReturn(upstreamShipyard());
+
+        service.get(SYMBOL, TOKEN, Priority.BACKGROUND, false);
 
         ArgumentCaptor<LocationDataEntity> captor = ArgumentCaptor.forClass(LocationDataEntity.class);
         verify(repository).upsert(captor.capture());
@@ -66,39 +75,42 @@ class ShipyardServiceTest {
     }
 
     @Test
-    void getShipyard_forceRefresh_bypassesCacheAndFetchesUpstream() throws Exception {
-        JsonNode upstream = objectMapper.readTree("""
-                {"symbol":"X1-FQ86-B29","shipTypes":[]}""");
-        when(spaceTradersClient.fetchShipyard(SYSTEM, SYMBOL, AUTH, null)).thenReturn(upstream);
+    void refresh_bypassesCacheAndFetchesUpstream() throws Exception {
+        when(spaceTradersClient.fetchShipyard(SYSTEM, SYMBOL, TOKEN, Priority.INTERACTIVE))
+                .thenReturn(upstreamShipyard());
 
-        service.getShipyard(SYMBOL, AUTH, null, true);
+        service.refresh(SYMBOL, TOKEN, Priority.INTERACTIVE);
 
         verify(repository, never()).findBySymbol(any());
-        verify(spaceTradersClient).fetchShipyard(SYSTEM, SYMBOL, AUTH, null);
+        verify(spaceTradersClient).fetchShipyard(SYSTEM, SYMBOL, TOKEN, Priority.INTERACTIVE);
     }
 
     // ── anonymous callers (auth-design.md decision 18) ──────────────────────
 
     @Test
-    void getShipyard_cacheHit_noAuthHeaderAtAll_stillSucceeds() {
-        LocationDataEntity cached = shipyardEntity();
-        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(cached));
+    void get_cacheHit_noTokenAtAll_stillSucceeds() {
+        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(shipyardEntity()));
 
-        JsonNode result = service.getShipyard(SYMBOL, null, null, false);
+        JsonNode result = service.get(SYMBOL, null, Priority.BACKGROUND, false);
 
         assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
         verifyNoInteractions(spaceTradersClient);
     }
 
     @Test
-    void getShipyard_cacheMiss_noAuthHeader_throwsUnauthorizedWithoutCallingUpstream() {
+    void get_cacheMiss_noToken_throwsUnauthorizedWithoutCallingUpstream() {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.getShipyard(SYMBOL, null, null, false))
-                .isInstanceOf(UpstreamException.class)
-                .satisfies(e -> assertThat(((UpstreamException) e).getStatus())
+        assertThatThrownBy(() -> service.get(SYMBOL, null, Priority.BACKGROUND, false))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus())
                         .isEqualTo(HttpStatus.UNAUTHORIZED));
         verifyNoInteractions(spaceTradersClient);
+    }
+
+    private JsonNode upstreamShipyard() throws Exception {
+        return objectMapper.readTree("""
+                {"symbol":"X1-FQ86-B29","shipTypes":[]}""");
     }
 
     private LocationDataEntity shipyardEntity() {

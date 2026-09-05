@@ -2,8 +2,9 @@ package de.vnm.navigation.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.vnm.navigation.client.Priority;
 import de.vnm.navigation.client.SpaceTradersClient;
-import de.vnm.navigation.exception.UpstreamException;
+import de.vnm.navigation.exception.ApiException;
 import de.vnm.navigation.model.LocationDataEntity;
 import de.vnm.navigation.repository.MarketRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 
@@ -31,48 +33,64 @@ class MarketServiceTest {
     MarketService service;
     ObjectMapper objectMapper = new ObjectMapper();
 
-    private static final String AUTH = "Bearer test-token";
+    private static final String TOKEN = "test-token";
     private static final String SYMBOL = "X1-FQ86-B29";
     private static final String SYSTEM = "X1-FQ86";
+    private static final Duration TTL = Duration.ofSeconds(60);
 
     @BeforeEach
     void setUp() {
-        service = new MarketService(repository, spaceTradersClient, objectMapper);
+        service = new MarketService(repository, spaceTradersClient, objectMapper, TTL);
     }
 
     @Test
-    void getMarket_freshCache_returnsDataWithoutCallingUpstream() {
-        LocationDataEntity cached = marketEntity(Instant.now().minusSeconds(10).toString());
-        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(cached));
+    void get_freshCache_returnsDataWithoutCallingUpstream() {
+        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(marketEntity(secondsAgo(10))));
 
-        JsonNode result = service.getMarket(SYMBOL, AUTH, null, false);
+        JsonNode result = service.get(SYMBOL, TOKEN, Priority.BACKGROUND, false);
 
         assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
         verifyNoInteractions(spaceTradersClient);
     }
 
     @Test
-    void getMarket_staleCache_refetchesFromUpstream() throws Exception {
-        LocationDataEntity cached = marketEntity(Instant.now().minusSeconds(120).toString());
-        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(cached));
-        JsonNode upstream = objectMapper.readTree("""
-                {"symbol":"X1-FQ86-B29","tradeGoods":[]}""");
-        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, AUTH, null)).thenReturn(upstream);
+    void get_staleCache_refetchesFromUpstream() throws Exception {
+        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(marketEntity(secondsAgo(120))));
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, TOKEN, Priority.BACKGROUND))
+                .thenReturn(upstreamMarket());
 
-        JsonNode result = service.getMarket(SYMBOL, AUTH, null, false);
+        JsonNode result = service.get(SYMBOL, TOKEN, Priority.BACKGROUND, false);
 
         assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
-        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, AUTH, null);
+        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, TOKEN, Priority.BACKGROUND);
+    }
+
+    /**
+     * Regression: staleness was decided by a bare {@code Instant.parse} of the stored
+     * timestamp. A row whose {@code fetched_at} could not be parsed — written by an older
+     * build, or edited by hand — threw {@code DateTimeParseException} out of the cache
+     * lookup, which nothing handled, so that waypoint answered 500 on every request and no
+     * amount of {@code forceRefresh} on the GET path could clear it.
+     */
+    @Test
+    void get_unreadableFetchedAt_isTreatedAsStaleInsteadOfFailing() throws Exception {
+        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(marketEntity("not-a-timestamp")));
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, TOKEN, Priority.BACKGROUND))
+                .thenReturn(upstreamMarket());
+
+        JsonNode result = service.get(SYMBOL, TOKEN, Priority.BACKGROUND, false);
+
+        assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
+        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, TOKEN, Priority.BACKGROUND);
     }
 
     @Test
-    void getMarket_cacheMiss_fetchesFromUpstreamAndStores() throws Exception {
+    void get_cacheMiss_fetchesFromUpstreamAndStores() throws Exception {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.empty());
-        JsonNode upstream = objectMapper.readTree("""
-                {"symbol":"X1-FQ86-B29","tradeGoods":[]}""");
-        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, AUTH, null)).thenReturn(upstream);
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, TOKEN, Priority.BACKGROUND))
+                .thenReturn(upstreamMarket());
 
-        service.getMarket(SYMBOL, AUTH, null, false);
+        service.get(SYMBOL, TOKEN, Priority.BACKGROUND, false);
 
         ArgumentCaptor<LocationDataEntity> captor = ArgumentCaptor.forClass(LocationDataEntity.class);
         verify(repository).upsert(captor.capture());
@@ -81,39 +99,94 @@ class MarketServiceTest {
     }
 
     @Test
-    void getMarket_forceRefresh_bypassesCacheAndFetchesUpstream() throws Exception {
-        JsonNode upstream = objectMapper.readTree("""
-                {"symbol":"X1-FQ86-B29","tradeGoods":[]}""");
-        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, AUTH, null)).thenReturn(upstream);
+    void get_forceRefresh_bypassesCacheAndFetchesUpstream() throws Exception {
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, TOKEN, Priority.BACKGROUND))
+                .thenReturn(upstreamMarket());
 
-        service.getMarket(SYMBOL, AUTH, null, true);
+        service.get(SYMBOL, TOKEN, Priority.BACKGROUND, true);
 
         verify(repository, never()).findBySymbol(any());
-        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, AUTH, null);
+        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, TOKEN, Priority.BACKGROUND);
+    }
+
+    /**
+     * Regression: a zero TTL was only "always stale" by arithmetic — {@code isFresh} asked
+     * whether the row predated {@code now - 0}, so a row stamped at or after now (a clock
+     * stepped backwards, a restored database) read as a cache hit on a service explicitly
+     * configured not to cache.
+     */
+    @Test
+    void zeroTtl_futureDatedRow_isStillRefetched() throws Exception {
+        MarketService alwaysStale = new MarketService(repository, spaceTradersClient, objectMapper, Duration.ZERO);
+        when(repository.findBySymbol(SYMBOL))
+                .thenReturn(Optional.of(marketEntity(Instant.now().plusSeconds(60).toString())));
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, TOKEN, Priority.BACKGROUND))
+                .thenReturn(upstreamMarket());
+
+        alwaysStale.get(SYMBOL, TOKEN, Priority.BACKGROUND, false);
+
+        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, TOKEN, Priority.BACKGROUND);
+    }
+
+    /** A zero TTL means "never serve from cache", not "cache forever". */
+    @Test
+    void zeroTtl_alwaysRefetches() throws Exception {
+        MarketService alwaysStale = new MarketService(repository, spaceTradersClient, objectMapper, Duration.ZERO);
+        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(marketEntity(secondsAgo(1))));
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, TOKEN, Priority.BACKGROUND))
+                .thenReturn(upstreamMarket());
+
+        alwaysStale.get(SYMBOL, TOKEN, Priority.BACKGROUND, false);
+
+        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, TOKEN, Priority.BACKGROUND);
+    }
+
+    @Test
+    void negativeTtl_isRejectedAtConstruction() {
+        assertThatThrownBy(() ->
+                new MarketService(repository, spaceTradersClient, objectMapper, Duration.ofSeconds(-1)))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     // ── anonymous callers (auth-design.md decision 18) ──────────────────────
 
     @Test
-    void getMarket_cacheHit_noAuthHeaderAtAll_stillSucceeds() {
-        LocationDataEntity cached = marketEntity(Instant.now().minusSeconds(10).toString());
-        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(cached));
+    void get_cacheHit_noTokenAtAll_stillSucceeds() {
+        when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(marketEntity(secondsAgo(10))));
 
-        JsonNode result = service.getMarket(SYMBOL, null, null, false);
+        JsonNode result = service.get(SYMBOL, null, Priority.BACKGROUND, false);
 
         assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
         verifyNoInteractions(spaceTradersClient);
     }
 
     @Test
-    void getMarket_cacheMiss_noAuthHeader_throwsUnauthorizedWithoutCallingUpstream() {
+    void get_cacheMiss_noToken_throwsUnauthorizedWithoutCallingUpstream() {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.getMarket(SYMBOL, null, null, false))
-                .isInstanceOf(UpstreamException.class)
-                .satisfies(e -> assertThat(((UpstreamException) e).getStatus())
+        assertThatThrownBy(() -> service.get(SYMBOL, null, Priority.BACKGROUND, false))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus())
                         .isEqualTo(HttpStatus.UNAUTHORIZED));
         verifyNoInteractions(spaceTradersClient);
+    }
+
+    @Test
+    void get_malformedSymbol_rejectedBeforeTouchingTheCache() {
+        assertThatThrownBy(() -> service.get("NOSEPARATOR", TOKEN, Priority.BACKGROUND, false))
+                .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(repository, spaceTradersClient);
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    private JsonNode upstreamMarket() throws Exception {
+        return objectMapper.readTree("""
+                {"symbol":"X1-FQ86-B29","tradeGoods":[]}""");
+    }
+
+    private static String secondsAgo(int seconds) {
+        return Instant.now().minusSeconds(seconds).toString();
     }
 
     private LocationDataEntity marketEntity(String fetchedAt) {

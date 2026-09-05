@@ -29,8 +29,10 @@ public class WaypointRepository {
     }
 
     public List<WaypointEntity> findBySystemSymbol(String systemSymbol) {
+        // Ordered so a listing is byte-for-byte reproducible across calls; SQLite makes
+        // no promise about row order otherwise.
         String sql = "SELECT symbol, system_symbol, type, x, y, raw_json, fetched_at " +
-                     "FROM waypoints WHERE system_symbol = :systemSymbol";
+                     "FROM waypoints WHERE system_symbol = :systemSymbol ORDER BY symbol";
         return jdbc.query(sql, new MapSqlParameterSource("systemSymbol", systemSymbol), MAPPER);
     }
 

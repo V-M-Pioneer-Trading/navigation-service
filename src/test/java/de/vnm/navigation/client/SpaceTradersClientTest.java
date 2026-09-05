@@ -1,0 +1,233 @@
+package de.vnm.navigation.client;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import de.vnm.navigation.exception.ApiException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.RestClient;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+
+/**
+ * Wire-level tests for the upstream client. Every service-level test mocks this class, so
+ * until these existed nothing exercised pagination, header forwarding, or the mapping of
+ * upstream failures onto HTTP statuses — the layer where most of the bugs actually were.
+ */
+class SpaceTradersClientTest {
+
+    private static final String BASE = "https://gateway.test/proxy";
+    private static final String TOKEN = "test-token";
+    private static final String SYSTEM = "X1-FQ86";
+    private static final String WAYPOINT = "X1-FQ86-B29";
+
+    private MockRestServiceServer server;
+    private SpaceTradersClient client;
+
+    @BeforeEach
+    void setUp() {
+        RestClient.Builder builder = RestClient.builder();
+        server = MockRestServiceServer.bindTo(builder).build();
+        client = new SpaceTradersClient(builder, new ObjectMapper(), BASE);
+    }
+
+    /**
+     * MockRestServiceServer only fails a request that does not match an expectation; a
+     * request that is never made goes unnoticed unless someone verifies. Doing it here
+     * covers every test in the class, including tests added later, and means a test that
+     * asserts only "this throws" still proves the call went out.
+     */
+    @AfterEach
+    void allExpectedRequestsWereMade() {
+        server.verify();
+    }
+
+    // ── request shape ────────────────────────────────────────────────────────
+
+    @Test
+    void fetchWaypoint_sendsBearerTokenAndPriorityHeader() {
+        server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
+              .andExpect(header("Authorization", "Bearer " + TOKEN))
+              .andExpect(header("X-Priority", "interactive"))
+              .andRespond(withSuccess("""
+                      {"data":{"symbol":"X1-FQ86-B29","type":"ASTEROID"}}""",
+                      MediaType.APPLICATION_JSON));
+
+        JsonNode result = client.fetchWaypoint(SYSTEM, WAYPOINT, TOKEN, Priority.INTERACTIVE);
+
+        assertThat(result.path("symbol").asText()).isEqualTo(WAYPOINT);
+    }
+
+    @Test
+    void fetchMarket_backgroundPriority_sentAsBackground() {
+        server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29/market"))
+              .andExpect(header("X-Priority", "background"))
+              .andRespond(withSuccess("""
+                      {"data":{"symbol":"X1-FQ86-B29","tradeGoods":[]}}""",
+                      MediaType.APPLICATION_JSON));
+
+        client.fetchMarket(SYSTEM, WAYPOINT, TOKEN, Priority.BACKGROUND);
+
+    }
+
+    @Test
+    void fetchShipyard_returnsUnwrappedDataNode() {
+        server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29/shipyard"))
+              .andRespond(withSuccess("""
+                      {"data":{"symbol":"X1-FQ86-B29","shipTypes":[]}}""",
+                      MediaType.APPLICATION_JSON));
+
+        JsonNode result = client.fetchShipyard(SYSTEM, WAYPOINT, TOKEN, Priority.BACKGROUND);
+
+        assertThat(result.has("shipTypes")).isTrue();
+    }
+
+    // ── failure mapping ──────────────────────────────────────────────────────
+
+    @Test
+    void fetchWaypoint_upstream404_keepsTheUpstreamStatus() {
+        server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
+              .andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT, TOKEN, Priority.BACKGROUND))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    @Test
+    void fetchWaypoint_upstream500_becomesBadGateway() {
+        server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
+              .andRespond(withServerError());
+
+        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT, TOKEN, Priority.BACKGROUND))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY));
+    }
+
+    /**
+     * Regression: a transport failure (st-gateway down, DNS failure, read timeout) used to
+     * escape as a raw {@code ResourceAccessException}, which no handler mapped, so callers
+     * saw an undifferentiated 500 instead of the documented 502.
+     */
+    @Test
+    void fetchWaypoint_gatewayUnreachable_becomesBadGateway() {
+        server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
+              .andRespond(request -> {
+                  throw new IOException("Connection refused");
+              });
+
+        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT, TOKEN, Priority.BACKGROUND))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY))
+                .hasMessageContaining("unreachable");
+    }
+
+    /**
+     * Regression: a 200 whose body carries no {@code data} envelope used to yield Jackson's
+     * MissingNode, which serialises to the literal {@code null}. That was cached as a valid
+     * row and returned to callers as {@code 200 null} — permanently, since it then read as
+     * a cache hit.
+     */
+    @Test
+    void fetchWaypoint_responseWithoutDataEnvelope_becomesBadGateway() {
+        server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
+              .andRespond(withSuccess("""
+                      {"error":{"message":"something else entirely"}}""",
+                      MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT, TOKEN, Priority.BACKGROUND))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY))
+                .hasMessageContaining("no data payload");
+    }
+
+    @Test
+    void fetchWaypoint_unparseableBody_becomesBadGateway() {
+        server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
+              .andRespond(withSuccess("<html>gateway error</html>", MediaType.TEXT_HTML));
+
+        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT, TOKEN, Priority.BACKGROUND))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY));
+    }
+
+    // ── pagination ───────────────────────────────────────────────────────────
+
+    @Test
+    void fetchWaypointsBySystem_followsPagesUntilMetaTotalIsCovered() {
+        expectPage(1, page(20, 23));
+        expectPage(2, page(3, 23));
+
+        List<JsonNode> all = client.fetchWaypointsBySystem(SYSTEM, TOKEN, Priority.BACKGROUND);
+
+        assertThat(all).hasSize(23);
+    }
+
+    @Test
+    void fetchWaypointsBySystem_singleShortPage_stopsImmediately() {
+        expectPage(1, page(4, 4));
+
+        assertThat(client.fetchWaypointsBySystem(SYSTEM, TOKEN, Priority.BACKGROUND)).hasSize(4);
+    }
+
+    /**
+     * Regression: {@code meta.total} was the only stop condition and defaulted to 0 when the
+     * key was absent, so a response without {@code meta} ended the walk after one page. A
+     * 23-waypoint system was then cached — and served — as 20 waypoints.
+     */
+    @Test
+    void fetchWaypointsBySystem_responseWithoutMeta_keepsPagingUntilAShortPage() {
+        expectPage(1, pageWithoutMeta(20));
+        expectPage(2, pageWithoutMeta(3));
+
+        List<JsonNode> all = client.fetchWaypointsBySystem(SYSTEM, TOKEN, Priority.BACKGROUND);
+
+        assertThat(all).hasSize(23);
+    }
+
+    @Test
+    void fetchWaypointsBySystem_dataNotAnArray_becomesBadGateway() {
+        expectPage(1, """
+                {"data":{"symbol":"X1-FQ86-B29"},"meta":{"total":1}}""");
+
+        assertThatThrownBy(() -> client.fetchWaypointsBySystem(SYSTEM, TOKEN, Priority.BACKGROUND))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY));
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    private void expectPage(int page, String body) {
+        server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints?page=" + page + "&limit=20"))
+              .andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+    }
+
+    private static String page(int count, int total) {
+        return "{\"data\":" + waypoints(count) + ",\"meta\":{\"total\":" + total + "}}";
+    }
+
+    private static String pageWithoutMeta(int count) {
+        return "{\"data\":" + waypoints(count) + "}";
+    }
+
+    private static String waypoints(int count) {
+        return IntStream.range(0, count)
+                .mapToObj(i -> "{\"symbol\":\"X1-FQ86-W" + i + "\",\"systemSymbol\":\"X1-FQ86\"}")
+                .collect(Collectors.joining(",", "[", "]"));
+    }
+}
