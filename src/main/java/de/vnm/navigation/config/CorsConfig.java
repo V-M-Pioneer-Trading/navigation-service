@@ -1,6 +1,5 @@
 package de.vnm.navigation.config;
 
-import de.vnm.navigation.api.ApiHeaders;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
@@ -27,7 +26,6 @@ public class CorsConfig implements WebMvcConfigurer {
         registry.addMapping("/api/**")
                 .allowedOrigins(allowedOrigins)
                 .allowedMethods("GET", "POST")
-                .allowedHeaders(HttpHeaders.CONTENT_TYPE, HttpHeaders.AUTHORIZATION,
-                                ApiHeaders.PRIORITY, ApiHeaders.SPACETRADERS_TOKEN);
+                .allowedHeaders(HttpHeaders.CONTENT_TYPE, HttpHeaders.AUTHORIZATION);
     }
 }

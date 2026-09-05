@@ -22,44 +22,48 @@ build-script change working on both.
 | File | Owns | Depends on |
 |------|------|------------|
 | `NavigationServiceApplication` | Boot entry point; registers `SqliteDirectoryInitializer` | `config` |
-| `api/ApiHeaders` | The inbound custom header names | — |
-| `api/WaypointController` | Waypoint and system routes; turns `X-Priority` into `Priority` | `service`, `client.Priority` |
-| `api/MarketController`, `api/ShipyardController` | Their two routes each | `service`, `client.Priority` |
+| `api/WaypointController` | Waypoint and system routes; receives the verified `Session` (or null) | `service`, `auth.Session` |
+| `api/MarketController`, `api/ShipyardController` | Their two routes each | `service`, `auth.Session` |
 | `api/HealthController` | `/health` and `/api/navigation/health` | — |
-| `client/Priority` | The `interactive`/`background` vocabulary and its parsing | — |
+| `auth/ClerkVerifier` | Networkless RS256 verification; PEM parsing; claim shape | nimbus-jose-jwt |
+| `auth/ClerkAuthFilter` | The one authorization rule for `/api/navigation/v1/**`; the family error envelope | `auth` |
+| `auth/Session`, `auth/Scopes` | The verified identity handed to controllers; the scope literals | — |
 | `client/SpaceTradersClient` | Every outbound HTTP call, pagination, upstream→status mapping | `exception` |
 | `service/WaypointService` | Waypoint and system-listing cache logic, transactions | `client`, `repository`, `model` |
 | `service/CachedResourceService` | The shared cache-then-fetch sequence for symbol-keyed resources | `client`, `repository`, `model` |
 | `service/MarketService`, `service/ShipyardService` | Only what differs: repository, upstream call, TTL | `CachedResourceService` |
 | `service/Symbols` | Symbol parsing and validation | — |
-| `service/Credentials` | The one credential rule | `exception` |
+| `service/LiveFetch` | The one rule about who may cause an upstream call | `auth.Session`, `exception` |
 | `service/CachedJson` | Blob read/write and timestamp parsing | `exception` |
 | `repository/WaypointRepository` | The `waypoints` table | `model` |
 | `repository/LocationDataRepository` (+ `Market`/`Shipyard` subclasses) | The `markets` and `shipyards` tables | `model` |
 | `repository/SystemCacheRepository` | The `system_fetches` marker table | — |
 | `exception/ApiException`, `GlobalExceptionHandler` | Deliberate HTTP statuses; RFC 9457 rendering | — |
-| `config/CorsConfig` | Browser access to `/api/**` | `api.ApiHeaders` |
+| `config/CorsConfig` | Browser access to `/api/**` | — |
+| `config/ClerkConfig` | Wires the trust anchor from `CLERK_JWT_KEY` / `_FILE`; refuses to start without one | `auth` |
 | `config/SqliteDirectoryInitializer` | Creating the database directory before the pool opens | — |
 
 ### Dependency rules
 
 - Layering is `api → service → {client, repository} → model/exception`. Never the reverse.
+  `auth` sits beside `api`: the filter runs before any controller, and `auth.Session` is the
+  only auth type `service` may import.
 - **No controller calls another controller, and no service calls another service.** Both
   happened before (`MarketController` used a static on `WaypointController`; `MarketService`
-  used statics on `WaypointService`). Shared behaviour goes in `Symbols`, `Credentials`,
+  used statics on `WaypointService`). Shared behaviour goes in `Symbols`, `LiveFetch`,
   `CachedJson`, or `CachedResourceService`.
-- `client` must not import from `api`. `SpaceTradersClient` writes the literal
-  `"X-Priority"` for its *outbound* request on purpose: that is st-gateway's contract, a
-  different one from this service's inbound header, and they are free to diverge.
+- `client` must not import from `api` or `auth`. `SpaceTradersClient` sends no credential
+  and no priority hint: st-gateway injects the agent token and derives priority itself
+  (auth-design.md decisions 2 and 5). Adding either header back would be a regression.
 - Only `client` performs HTTP. Only `repository` writes SQL.
 
 ## Invariants
 
 Each of these is stated so a violation is visible in a diff:
 
-1. **The token is never persisted and never logged.** It appears only as a method parameter
-   and as the `Authorization` header built inside `SpaceTradersClient.exchange`. No entity
-   has a field for it.
+1. **No SpaceTraders credential exists in this service.** Not as a parameter, not as a
+   header, not in an entity. The Clerk session token is verified and discarded; only the
+   resulting `Session` (subject + scopes) travels, and it is never persisted or logged.
 2. **Every failure that is not a bug leaves as `ApiException`.** Anything else reaching the
    handler is a 500 and means something was missed. In particular, no HTTP or JSON
    exception may escape `SpaceTradersClient`.
@@ -75,8 +79,9 @@ Each of these is stated so a violation is visible in a diff:
    `Symbols`.
 8. **A cached row can never wedge a resource permanently.** An unreadable `fetched_at`
    reads as stale; a corrupt blob is a 500 that `forceRefresh` clears.
-9. **Only exactly `interactive` yields `Priority.INTERACTIVE`.** Everything else is
-   `BACKGROUND`.
+9. **A presented token that does not verify is a 401, never anonymous.** Downgrading a bad
+   credential to "no credential" would let an expired session read the cache silently and
+   hide a misconfigured trust anchor. Only a *missing* `Authorization` header is anonymous.
 10. **A zero TTL disables caching outright.** It is an explicit branch, never a consequence
     of the timestamp comparison — a row stamped at or after "now" must not read as a hit on
     a service configured not to cache.
@@ -103,8 +108,8 @@ Changing any of these breaks a consumer:
 
 | Identifier | Depended on by |
 |------------|----------------|
-| `X-SpaceTraders-Token`, `X-Priority` request headers | command-interface, automation-service, the MCP server |
-| The literal values `interactive` / `background` on the outbound `X-Priority` | st-gateway's queue |
+| `Authorization: Bearer <Clerk JWT>` on reads (optional) and refreshes (required, `universe:refresh`) | command-interface, automation-service |
+| The `{"error":{"message":…}}` auth envelope and its three messages | command-interface's shared error parser; must stay byte-identical to fleet-service's |
 | Route prefix `/api/navigation/v1` | CloudFront path routing |
 | `/health` **and** `/api/navigation/health` | Local compose probes and the production health check respectively — both mounts are load-bearing |
 | `{"data": [...], "total": n}` listing envelope | command-interface's system map |
@@ -126,19 +131,26 @@ Changing any of these breaks a consumer:
 
 ## Testing harness
 
-Four levels, deliberately:
+Five levels, deliberately:
 
 | Level | Example | What it is for |
 |-------|---------|----------------|
 | Plain unit | `SymbolsTest` | Pure logic. |
 | Mockito service | `WaypointServiceTest` | Cache decisions with repository and client mocked. |
-| `MockRestServiceServer` | `SpaceTradersClientTest` | The wire: headers, pagination, status mapping. Nothing else exercises the client — every other test mocks it. |
+| `MockRestServiceServer` | `SpaceTradersClientTest` | The wire: request shape, pagination, status mapping. Nothing else exercises the client — every other test mocks it. |
+| `@WebMvcTest` + real filter | `ClerkAuthFilterTest` | The authorization rule end to end with a per-run keypair (`auth/TestClerk`). No stub verifier. |
 | `@SpringBootTest` + real SQLite | `NavigationCacheIntegrationTest` | Schema, SQL, transactions. The only level that can catch a rollback bug. |
 
 Notes that will save time:
 
 - Use `@MockitoBean` / `@MockitoSpyBean` (Spring Framework 6.2), **not** the removal-marked
   `@MockBean`.
+- Every `@WebMvcTest` must `@Import(ClerkConfig.class)` — the slice does not scan plain
+  `@Configuration`, and without it the filter silently does not run and every auth
+  assertion passes vacuously. Every web slice *and* the `@SpringBootTest` must register
+  `clerk.jwt-key` via `@DynamicPropertySource` from `TestClerk::publicKeyPem`, or the
+  context refuses to start. `TestClerk.OPERATOR` is the exact `Session` `TestClerk.bearer()`
+  verifies to, so service mocks can match on it by equality.
 - The integration test creates its own temp SQLite file in a static initializer rather than
   with `@TempDir`. `@DynamicPropertySource` runs at context creation, and JUnit's `@TempDir`
   extension is not guaranteed to have run by then — the static initializer removes the
@@ -164,8 +176,8 @@ Notes that will save time:
 - **`MockRestServiceServer` expectations are ordered.** A pagination test must declare
   `page=1` before `page=2`, and the full URL including query string has to match.
 
-No flaky test is currently known. The suite was run five consecutive times clean at 82
-tests when this file was written.
+No flaky test is currently known. The suite was at 99 tests when this file was last
+updated.
 
 ## Extension conventions
 
@@ -176,8 +188,12 @@ tests when this file was written.
 - **A new upstream call**: add a method to `SpaceTradersClient` delegating to `fetchOne`.
   Do not hand-roll `retrieve()`/`onStatus`; the shared `exchange` is what guarantees
   invariants 2 and 3.
-- **A new header**: add it to `ApiHeaders` *and* to `CorsConfig`'s allow-list. A header
-  that is not allow-listed silently fails in the browser only.
+- **A new header**: add it to `CorsConfig`'s allow-list. A header that is not allow-listed
+  silently fails in the browser only. Think twice: the last two custom headers were both
+  deleted as pass-through.
+- **A new scope**: add the literal to `auth/Scopes`, to `meta/scripts/mint-dev-token.mjs`'s
+  defaults, to command-interface's `useOperator.js`, and to the operator's Clerk
+  `public_metadata`; record it as a decision in `meta/docs/design/auth-design.md`.
 - **A new config value**: put it in `application.properties` with an env-var default, add
   it to the README table, and validate it where it is injected — see
   `CachedResourceService`'s TTL check.

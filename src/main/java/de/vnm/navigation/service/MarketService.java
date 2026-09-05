@@ -2,7 +2,6 @@ package de.vnm.navigation.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import de.vnm.navigation.client.Priority;
 import de.vnm.navigation.client.SpaceTradersClient;
 import de.vnm.navigation.repository.MarketRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,8 +31,7 @@ public class MarketService extends CachedResourceService {
     }
 
     @Override
-    protected JsonNode fetchUpstream(String systemSymbol, String waypointSymbol,
-                                     String token, Priority priority) {
-        return spaceTradersClient.fetchMarket(systemSymbol, waypointSymbol, token, priority);
+    protected JsonNode fetchUpstream(String systemSymbol, String waypointSymbol) {
+        return spaceTradersClient.fetchMarket(systemSymbol, waypointSymbol);
     }
 }

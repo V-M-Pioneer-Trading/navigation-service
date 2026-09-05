@@ -2,7 +2,7 @@ package de.vnm.navigation.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import de.vnm.navigation.client.Priority;
+import de.vnm.navigation.auth.Session;
 import de.vnm.navigation.client.SpaceTradersClient;
 import de.vnm.navigation.exception.ApiException;
 import de.vnm.navigation.model.WaypointEntity;
@@ -31,10 +31,10 @@ import java.util.Optional;
  * {@code GET /waypoints/{symbol}} stores one row for the system, and treating that as a
  * cache hit made the listing endpoint answer "this system has one waypoint" forever.
  *
- * <h3>Auth token handling</h3>
- * The caller's {@code X-SpaceTraders-Token} is forwarded upstream and never persisted.
- * It is optional: a cache hit needs no credential at all, which is what makes reads
- * public (auth-design.md decision 2/decision 18); only a live fetch requires one.
+ * <h3>Who may fetch live</h3>
+ * A cache hit needs no identity at all, which is what makes reads public; a live fetch
+ * requires a verified Clerk session (auth-design.md decisions 2 and 3). The upstream
+ * credential is st-gateway's concern, not this service's (decision 5).
  */
 @Service
 public class WaypointService {
@@ -60,10 +60,10 @@ public class WaypointService {
      * Return a waypoint by symbol, fetching from SpaceTraders on cache miss.
      *
      * @param symbol       waypoint symbol, e.g. {@code X1-FQ86-B29}
-     * @param token        bare SpaceTraders token, or {@code null} for a cache-only read
+     * @param session      the verified caller, or {@code null} for an anonymous, cache-only read
      * @param forceRefresh when {@code true}, bypass the cache and re-fetch
      */
-    public JsonNode getWaypoint(String symbol, String token, Priority priority, boolean forceRefresh) {
+    public JsonNode getWaypoint(String symbol, Session session, boolean forceRefresh) {
         String systemSymbol = Symbols.systemOf(symbol);
         String context = "waypoint " + symbol;
 
@@ -75,9 +75,9 @@ public class WaypointService {
             }
         }
 
-        Credentials.requireForLiveFetch(token, context);
+        LiveFetch.requireSession(session, context);
         log.debug("Cache miss for {} — fetching from SpaceTraders", context);
-        JsonNode data = spaceTradersClient.fetchWaypoint(systemSymbol, symbol, token, priority);
+        JsonNode data = spaceTradersClient.fetchWaypoint(systemSymbol, symbol);
         repository.upsert(toEntity(data));
         return data;
     }
@@ -91,8 +91,7 @@ public class WaypointService {
      * @param forceRefresh when {@code true}, bypass the cache and re-walk the system
      */
     @Transactional
-    public List<JsonNode> getWaypointsBySystem(String systemSymbol, String token, Priority priority,
-                                               boolean forceRefresh) {
+    public List<JsonNode> getWaypointsBySystem(String systemSymbol, Session session, boolean forceRefresh) {
         Symbols.requireSystem(systemSymbol);
         String context = "system " + systemSymbol;
 
@@ -104,9 +103,9 @@ public class WaypointService {
                          .toList();
         }
 
-        Credentials.requireForLiveFetch(token, context);
+        LiveFetch.requireSession(session, context);
         log.debug("Cache miss for {} — fetching all waypoints from SpaceTraders", context);
-        List<JsonNode> fetched = spaceTradersClient.fetchWaypointsBySystem(systemSymbol, token, priority);
+        List<JsonNode> fetched = spaceTradersClient.fetchWaypointsBySystem(systemSymbol);
 
         // Map before writing: an unusable waypoint in the response aborts the refresh
         // while the previously cached listing is still on disk.
@@ -119,8 +118,8 @@ public class WaypointService {
     }
 
     /** Force-refresh a single waypoint from SpaceTraders and update the cache. */
-    public JsonNode refreshWaypoint(String symbol, String token, Priority priority) {
-        return getWaypoint(symbol, token, priority, true);
+    public JsonNode refreshWaypoint(String symbol, Session session) {
+        return getWaypoint(symbol, session, true);
     }
 
     /**
@@ -130,8 +129,8 @@ public class WaypointService {
      * carry the annotation itself, because a self-call would not go through the proxy.
      */
     @Transactional
-    public List<JsonNode> refreshWaypointsBySystem(String systemSymbol, String token, Priority priority) {
-        return getWaypointsBySystem(systemSymbol, token, priority, true);
+    public List<JsonNode> refreshWaypointsBySystem(String systemSymbol, Session session) {
+        return getWaypointsBySystem(systemSymbol, session, true);
     }
 
     private WaypointEntity toEntity(JsonNode node) {
