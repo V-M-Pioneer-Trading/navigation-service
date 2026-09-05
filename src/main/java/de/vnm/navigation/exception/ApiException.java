@@ -10,8 +10,7 @@ import org.springframework.http.HttpStatus;
  * <ul>
  *   <li>SpaceTraders returned an error or something unusable — the status mirrors
  *       the upstream response where meaningful, {@code 502} otherwise;</li>
- *   <li>a live fetch was needed but the caller supplied no SpaceTraders token
- *       ({@code 401});</li>
+ *   <li>a live fetch was needed but the caller is anonymous ({@code 401});</li>
  *   <li>the local cache holds a row this service can no longer read ({@code 500}).</li>
  * </ul>
  */

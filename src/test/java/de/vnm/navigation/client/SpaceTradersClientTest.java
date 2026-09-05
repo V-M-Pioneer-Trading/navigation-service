@@ -18,7 +18,7 @@ import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.headerDoesNotExist;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
@@ -26,13 +26,12 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 /**
  * Wire-level tests for the upstream client. Every service-level test mocks this class, so
- * until these existed nothing exercised pagination, header forwarding, or the mapping of
+ * until these existed nothing exercised pagination, the request shape, or the mapping of
  * upstream failures onto HTTP statuses — the layer where most of the bugs actually were.
  */
 class SpaceTradersClientTest {
 
     private static final String BASE = "https://gateway.test/proxy";
-    private static final String TOKEN = "test-token";
     private static final String SYSTEM = "X1-FQ86";
     private static final String WAYPOINT = "X1-FQ86-B29";
 
@@ -60,29 +59,17 @@ class SpaceTradersClientTest {
     // ── request shape ────────────────────────────────────────────────────────
 
     @Test
-    void fetchWaypoint_sendsBearerTokenAndPriorityHeader() {
+    void fetchWaypoint_sendsNoCredentialAndNoPriorityHint() {
         server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
-              .andExpect(header("Authorization", "Bearer " + TOKEN))
-              .andExpect(header("X-Priority", "interactive"))
+              .andExpect(headerDoesNotExist("Authorization"))
+              .andExpect(headerDoesNotExist("X-Priority"))
               .andRespond(withSuccess("""
                       {"data":{"symbol":"X1-FQ86-B29","type":"ASTEROID"}}""",
                       MediaType.APPLICATION_JSON));
 
-        JsonNode result = client.fetchWaypoint(SYSTEM, WAYPOINT, TOKEN, Priority.INTERACTIVE);
+        JsonNode result = client.fetchWaypoint(SYSTEM, WAYPOINT);
 
         assertThat(result.path("symbol").asText()).isEqualTo(WAYPOINT);
-    }
-
-    @Test
-    void fetchMarket_backgroundPriority_sentAsBackground() {
-        server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29/market"))
-              .andExpect(header("X-Priority", "background"))
-              .andRespond(withSuccess("""
-                      {"data":{"symbol":"X1-FQ86-B29","tradeGoods":[]}}""",
-                      MediaType.APPLICATION_JSON));
-
-        client.fetchMarket(SYSTEM, WAYPOINT, TOKEN, Priority.BACKGROUND);
-
     }
 
     @Test
@@ -92,7 +79,7 @@ class SpaceTradersClientTest {
                       {"data":{"symbol":"X1-FQ86-B29","shipTypes":[]}}""",
                       MediaType.APPLICATION_JSON));
 
-        JsonNode result = client.fetchShipyard(SYSTEM, WAYPOINT, TOKEN, Priority.BACKGROUND);
+        JsonNode result = client.fetchShipyard(SYSTEM, WAYPOINT);
 
         assertThat(result.has("shipTypes")).isTrue();
     }
@@ -104,7 +91,7 @@ class SpaceTradersClientTest {
         server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
               .andRespond(withStatus(HttpStatus.NOT_FOUND));
 
-        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT, TOKEN, Priority.BACKGROUND))
+        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
     }
@@ -114,7 +101,7 @@ class SpaceTradersClientTest {
         server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
               .andRespond(withServerError());
 
-        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT, TOKEN, Priority.BACKGROUND))
+        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY));
     }
@@ -131,7 +118,7 @@ class SpaceTradersClientTest {
                   throw new IOException("Connection refused");
               });
 
-        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT, TOKEN, Priority.BACKGROUND))
+        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY))
                 .hasMessageContaining("unreachable");
@@ -150,7 +137,7 @@ class SpaceTradersClientTest {
                       {"error":{"message":"something else entirely"}}""",
                       MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT, TOKEN, Priority.BACKGROUND))
+        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY))
                 .hasMessageContaining("no data payload");
@@ -161,7 +148,7 @@ class SpaceTradersClientTest {
         server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
               .andRespond(withSuccess("<html>gateway error</html>", MediaType.TEXT_HTML));
 
-        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT, TOKEN, Priority.BACKGROUND))
+        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY));
     }
@@ -173,7 +160,7 @@ class SpaceTradersClientTest {
         expectPage(1, page(20, 23));
         expectPage(2, page(3, 23));
 
-        List<JsonNode> all = client.fetchWaypointsBySystem(SYSTEM, TOKEN, Priority.BACKGROUND);
+        List<JsonNode> all = client.fetchWaypointsBySystem(SYSTEM);
 
         assertThat(all).hasSize(23);
     }
@@ -182,7 +169,7 @@ class SpaceTradersClientTest {
     void fetchWaypointsBySystem_singleShortPage_stopsImmediately() {
         expectPage(1, page(4, 4));
 
-        assertThat(client.fetchWaypointsBySystem(SYSTEM, TOKEN, Priority.BACKGROUND)).hasSize(4);
+        assertThat(client.fetchWaypointsBySystem(SYSTEM)).hasSize(4);
     }
 
     /**
@@ -195,7 +182,7 @@ class SpaceTradersClientTest {
         expectPage(1, pageWithoutMeta(20));
         expectPage(2, pageWithoutMeta(3));
 
-        List<JsonNode> all = client.fetchWaypointsBySystem(SYSTEM, TOKEN, Priority.BACKGROUND);
+        List<JsonNode> all = client.fetchWaypointsBySystem(SYSTEM);
 
         assertThat(all).hasSize(23);
     }
@@ -205,7 +192,7 @@ class SpaceTradersClientTest {
         expectPage(1, """
                 {"data":{"symbol":"X1-FQ86-B29"},"meta":{"total":1}}""");
 
-        assertThatThrownBy(() -> client.fetchWaypointsBySystem(SYSTEM, TOKEN, Priority.BACKGROUND))
+        assertThatThrownBy(() -> client.fetchWaypointsBySystem(SYSTEM))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY));
     }

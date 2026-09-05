@@ -27,6 +27,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.xerial:sqlite-jdbc:3.47.1.0")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0")
+    // Clerk session verification, networkless (auth-design.md decision 10). Not in the Boot BOM, so pinned.
+    implementation("com.nimbusds:nimbus-jose-jwt:9.47")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 }

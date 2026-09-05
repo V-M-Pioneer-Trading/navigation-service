@@ -11,8 +11,9 @@ touching the budget again.
 
 Two consequences follow from that, and they explain most of the design:
 
-- **Reads are public.** A cache hit needs no credential, so anything in the fleet can read
-  a known waypoint without holding a SpaceTraders token. Only a *live fetch* needs one.
+- **Reads are public.** A cache hit needs no identity at all, so anything in the fleet can
+  read a known waypoint anonymously. Only a *live fetch* needs a signed-in caller, and only
+  an explicit *refresh* needs the `universe:refresh` scope.
 - **Nothing expires by default.** Waypoints and shipyards are kept until a caller
   explicitly asks for a refresh. Markets are the exception: prices move, so they carry a
   short TTL.
@@ -34,23 +35,24 @@ flowchart LR
     GW["st-gateway<br/>shared rate budget"]
     ST["SpaceTraders API v2"]
 
-    UI -->|"X-Priority: interactive"| NAV
-    AUTO -->|"no X-Priority - background"| NAV
+    UI -->|"Authorization: Clerk session<br/>(optional on GET)"| NAV
+    AUTO --> NAV
     MCP --> NAV
 
     NAV <-->|"cache hit / store"| DB
-    NAV -->|"cache miss only<br/>Authorization: Bearer, X-Priority"| GW
+    NAV -->|"cache miss only<br/>no credential, no priority hint"| GW
     GW --> ST
 ```
 
 The service never calls SpaceTraders directly. Every upstream request goes through
-st-gateway, which owns the rate budget and a priority queue, and this service forwards the
-caller's own priority declaration rather than asserting one of its own.
+st-gateway, which owns the rate budget, injects the fleet's agent token itself
+(auth-design.md decision 5) and derives queue priority from the identity it verifies
+(decision 2). This service sends it nothing a caller could spoof.
 
 ## The read path
 
-Every endpoint follows the same shape. The only credential check happens on the branch
-that actually needs a credential.
+Every endpoint follows the same shape. The only identity check happens on the branch
+that actually spends the rate budget.
 
 ```mermaid
 flowchart TD
@@ -60,7 +62,7 @@ flowchart TD
     C -- yes --> F
     C -- no --> D{"Usable cached row?"}
     D -- yes --> D1["200 from SQLite"]
-    D -- no --> F{"Token supplied?"}
+    D -- no --> F{"Signed-in caller?"}
     F -- no --> F1["401 Unauthorized"]
     F -- yes --> G["Fetch via st-gateway"]
     G --> H{"Upstream result"}
@@ -104,20 +106,26 @@ insert of the new ones and the marker update either all land or none do.
 
 ## Authentication
 
-There is no session or API key on this service. Endpoints take one optional header:
+The same networkless Clerk verification every backend in the fleet runs
+(auth-design.md decisions 4 and 10): an RS256 session JWT in `Authorization: Bearer …`,
+checked against the PEM public key in `CLERK_JWT_KEY`. No JWKS fetch, no bypass flag.
 
-| Header                 | Required | Meaning                                                                 |
-|------------------------|----------|-------------------------------------------------------------------------|
-| `X-SpaceTraders-Token` | no       | Bare SpaceTraders token. Forwarded upstream as `Bearer`; never stored.   |
-| `X-Priority`           | no       | `interactive` for user-facing traffic; anything else means `background`. |
+| Route            | No `Authorization` header | Verified session               | Scope needed       |
+|------------------|---------------------------|--------------------------------|--------------------|
+| `GET …`          | cache only; a miss is 401 | cache, then live fetch on miss | none               |
+| `POST …/refresh` | 401                       | live fetch                     | `universe:refresh` |
 
-The token is deliberately **not** in `Authorization` — the rest of the fleet reserves that
-header for a Clerk session. Without a token a request is served from cache or answered
-`401`; it is never rejected up front.
+A presented token that does not verify is `401` on every route — a bad credential is never
+quietly downgraded to anonymous. A verified session without `universe:refresh` is `403` on
+the refresh routes; `fleet:control` does not imply it (decision 20).
 
-`X-Priority` is forwarded to st-gateway's queue. Anything that is not exactly
-`interactive` — missing, misspelled, invented — degrades to `background`, so no caller can
-jump the queue that keeps the browser responsive by sending a malformed header.
+Auth failures use the fleet-wide `{"error":{"message":…}}` envelope with the same three
+messages as fleet-service and agent-service, so command-interface needs one parser for
+every backend. This is the one place this service does not emit RFC 9457 problem details.
+
+No SpaceTraders credential is ever presented to this service: st-gateway holds the only
+copy and injects it upstream (decision 5). The old `X-SpaceTraders-Token` and `X-Priority`
+headers are gone; a stray one is ignored, never an error.
 
 ---
 
@@ -146,6 +154,9 @@ fetches answer `502`.
 | `ST_GATEWAY_URL`      | `http://localhost:3002` | st-gateway base URL; `/proxy` is appended.              |
 | `MARKET_CACHE_TTL`    | `60s`                   | Market cache lifetime. `0s` disables market caching.    |
 | `CORS_ALLOWED_ORIGIN` | `http://localhost:3000` | Comma-separated browser origins allowed on `/api/**`.   |
+| `CLERK_JWT_KEY`       | —                       | Clerk RS256 public key, SPKI PEM; literal `\n` escapes accepted. Wins over the file. |
+| `CLERK_JWT_KEY_FILE`  | —                       | Path to the same key. One of the two is **required**; the service refuses to start otherwise. |
+| `CLERK_ISSUER`        | (unchecked)             | Expected `iss` claim. Optional; the key is what verifies. |
 
 ### Container
 
@@ -165,6 +176,7 @@ docker run -d --name navigation-service --restart unless-stopped \
   -e SQLITE_DB_PATH=/data/nav.db \
   -e ST_GATEWAY_URL=http://st-gateway:3002 \
   -e SPRING_PROFILES_ACTIVE=prod \
+  -e CLERK_JWT_KEY="$CLERK_JWT_KEY" \
   -v nav-data:/data \
   ghcr.io/v-m-pioneer-trading/navigation-service:latest
 ```
@@ -187,16 +199,21 @@ Interactive docs at `GET /swagger-ui.html`, spec at `GET /api-docs`.
 | `GET`  | `/api/navigation/v1/waypoints/{symbol}/shipyard`       | Shipyard data.                                 |
 | `POST` | `/api/navigation/v1/waypoints/{symbol}/shipyard/refresh` | Re-fetch shipyard data.                      |
 
-Every `GET` above accepts `?forceRefresh=true`, which is exactly equivalent to calling the
-matching `POST .../refresh`.
+Every `GET` above accepts `?forceRefresh=true`. It fetches live like the matching
+`POST …/refresh`, but it is a `GET`: any verified session may use it, and an anonymous
+caller gets `401`. The `universe:refresh` scope guards only the `POST` routes.
 
 ```bash
 # Cached read, no credential needed
 curl http://localhost:8080/api/navigation/v1/waypoints/X1-FQ86-B29
 
-# Live fetch, interactive priority
-curl -H "X-SpaceTraders-Token: $ST_TOKEN" -H "X-Priority: interactive" \
-     "http://localhost:8080/api/navigation/v1/systems/X1-FQ86/waypoints?forceRefresh=true"
+# Live fetch on a miss: any verified Clerk session
+curl -H "Authorization: Bearer $CLERK_JWT" \
+     http://localhost:8080/api/navigation/v1/systems/X1-FQ86/waypoints
+
+# Forced re-walk: a session carrying universe:refresh (locally: node meta/scripts/mint-dev-token.mjs)
+curl -X POST -H "Authorization: Bearer $CLERK_JWT" \
+     http://localhost:8080/api/navigation/v1/systems/X1-FQ86/waypoints/refresh
 ```
 
 Single resources return the raw SpaceTraders object. System listings wrap it:
@@ -214,7 +231,8 @@ Single resources return the raw SpaceTraders object. System listings wrap it:
 | Status | When                                                                              |
 |--------|-----------------------------------------------------------------------------------|
 | `400`  | Malformed waypoint or system symbol.                                              |
-| `401`  | SpaceTraders rejected the token, **or** nothing was cached and no token was sent.  |
+| `401`  | Invalid session anywhere; no session on a refresh; or an anonymous cache miss.     |
+| `403`  | A verified session without `universe:refresh` on a refresh route.                 |
 | `404`  | Waypoint, system, market or shipyard not found upstream.                          |
 | `502`  | st-gateway unreachable, upstream 5xx, or a response this service could not read.   |
 | `500`  | A cached row that can no longer be parsed. Refresh the resource to clear it.       |
@@ -247,8 +265,8 @@ Single resources return the raw SpaceTraders object. System listings wrap it:
 
 ## Related services
 
-- **st-gateway** — owns the SpaceTraders rate budget and the `interactive`/`background`
-  priority queue. All upstream traffic goes through it.
+- **st-gateway** — owns the SpaceTraders rate budget, the agent token, and the
+  `interactive`/`background` priority queue. All upstream traffic goes through it.
 - **SpaceTraders API** — `GET /systems/{system}/waypoints/{waypoint}`,
   `GET /systems/{system}/waypoints` (paginated, 20 per page),
   plus the `/market` and `/shipyard` sub-resources.

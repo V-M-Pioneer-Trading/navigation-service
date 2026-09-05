@@ -1,7 +1,8 @@
 package de.vnm.navigation.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import de.vnm.navigation.client.Priority;
+import de.vnm.navigation.auth.ClerkAuthFilter;
+import de.vnm.navigation.auth.Session;
 import de.vnm.navigation.service.WaypointService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -18,9 +19,11 @@ import java.util.Map;
 /**
  * REST API for waypoint data.
  *
- * <p>All endpoints accept an optional {@link ApiHeaders#SPACETRADERS_TOKEN} header.
- * Present, it is forwarded to SpaceTraders when an upstream fetch is needed; absent, the
- * request is served from cache only. The token is never stored by this service.
+ * <p>Reads are public and served from cache for anonymous callers; a verified Clerk
+ * session (handed in by {@link ClerkAuthFilter}) additionally allows a live fetch on a
+ * miss. The refresh routes require the {@code universe:refresh} scope, enforced by the
+ * filter before the controller runs. No SpaceTraders credential is ever presented to
+ * this service — st-gateway injects it (auth-design.md decision 5).
  */
 @RestController
 @RequestMapping("/api/navigation/v1")
@@ -44,7 +47,7 @@ public class WaypointController {
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Waypoint data"),
         @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
-        @ApiResponse(responseCode = "401", description = "Not cached and no SpaceTraders token supplied",
+        @ApiResponse(responseCode = "401", description = "Not cached and caller is anonymous",
                      content = @Content),
         @ApiResponse(responseCode = "404", description = "Waypoint not found in SpaceTraders",
                      content = @Content),
@@ -57,11 +60,11 @@ public class WaypointController {
             @PathVariable String symbol,
             @Parameter(description = "Bypass cache and re-fetch from SpaceTraders")
             @RequestParam(defaultValue = "false") boolean forceRefresh,
-            @RequestHeader(value = ApiHeaders.SPACETRADERS_TOKEN, required = false) String token,
-            @RequestHeader(value = ApiHeaders.PRIORITY, required = false) String priority) {
+            @Parameter(hidden = true)
+            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session) {
 
         return ResponseEntity.ok(
-                waypointService.getWaypoint(symbol, token, Priority.from(priority), forceRefresh));
+                waypointService.getWaypoint(symbol, session, forceRefresh));
     }
 
     @Operation(
@@ -71,7 +74,7 @@ public class WaypointController {
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Updated waypoint data"),
         @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
-        @ApiResponse(responseCode = "401", description = "No SpaceTraders token supplied", content = @Content),
+        @ApiResponse(responseCode = "401", description = "No Clerk session, or the presented one did not verify", content = @Content),
         @ApiResponse(responseCode = "404", description = "Waypoint not found", content = @Content),
         @ApiResponse(responseCode = "502", description = "Upstream error", content = @Content)
     })
@@ -79,11 +82,11 @@ public class WaypointController {
     public ResponseEntity<JsonNode> refreshWaypoint(
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")
             @PathVariable String symbol,
-            @RequestHeader(value = ApiHeaders.SPACETRADERS_TOKEN, required = false) String token,
-            @RequestHeader(value = ApiHeaders.PRIORITY, required = false) String priority) {
+            @Parameter(hidden = true)
+            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session) {
 
         return ResponseEntity.ok(
-                waypointService.refreshWaypoint(symbol, token, Priority.from(priority)));
+                waypointService.refreshWaypoint(symbol, session));
     }
 
     // ── System waypoints ──────────────────────────────────────────────────────
@@ -98,7 +101,7 @@ public class WaypointController {
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "List of waypoints"),
         @ApiResponse(responseCode = "400", description = "Malformed system symbol", content = @Content),
-        @ApiResponse(responseCode = "401", description = "Not cached and no SpaceTraders token supplied",
+        @ApiResponse(responseCode = "401", description = "Not cached and caller is anonymous",
                      content = @Content),
         @ApiResponse(responseCode = "404", description = "System not found", content = @Content),
         @ApiResponse(responseCode = "502", description = "Upstream error", content = @Content)
@@ -109,11 +112,11 @@ public class WaypointController {
             @PathVariable String systemSymbol,
             @Parameter(description = "Bypass cache and re-fetch all waypoints for the system")
             @RequestParam(defaultValue = "false") boolean forceRefresh,
-            @RequestHeader(value = ApiHeaders.SPACETRADERS_TOKEN, required = false) String token,
-            @RequestHeader(value = ApiHeaders.PRIORITY, required = false) String priority) {
+            @Parameter(hidden = true)
+            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session) {
 
         return ResponseEntity.ok(listBody(waypointService.getWaypointsBySystem(
-                systemSymbol, token, Priority.from(priority), forceRefresh)));
+                systemSymbol, session, forceRefresh)));
     }
 
     @Operation(
@@ -123,18 +126,18 @@ public class WaypointController {
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Updated list of waypoints"),
         @ApiResponse(responseCode = "400", description = "Malformed system symbol", content = @Content),
-        @ApiResponse(responseCode = "401", description = "No SpaceTraders token supplied", content = @Content),
+        @ApiResponse(responseCode = "401", description = "No Clerk session, or the presented one did not verify", content = @Content),
         @ApiResponse(responseCode = "502", description = "Upstream error", content = @Content)
     })
     @PostMapping("/systems/{systemSymbol}/waypoints/refresh")
     public ResponseEntity<Map<String, Object>> refreshWaypointsBySystem(
             @Parameter(description = "System symbol, e.g. X1-FQ86")
             @PathVariable String systemSymbol,
-            @RequestHeader(value = ApiHeaders.SPACETRADERS_TOKEN, required = false) String token,
-            @RequestHeader(value = ApiHeaders.PRIORITY, required = false) String priority) {
+            @Parameter(hidden = true)
+            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session) {
 
         return ResponseEntity.ok(listBody(waypointService.refreshWaypointsBySystem(
-                systemSymbol, token, Priority.from(priority))));
+                systemSymbol, session)));
     }
 
     /** {@code total} is the number of waypoints in this response, not SpaceTraders' page count. */

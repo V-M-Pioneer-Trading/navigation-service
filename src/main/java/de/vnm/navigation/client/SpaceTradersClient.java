@@ -6,7 +6,6 @@ import de.vnm.navigation.exception.ApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
@@ -20,9 +19,9 @@ import java.util.List;
  * HTTP client for the SpaceTraders v2 API, routed through st-gateway's shared
  * rate budget (meta#1/meta#7) rather than hitting SpaceTraders directly.
  *
- * <p>Every request carries the caller's SpaceTraders token as
- * {@code Authorization: Bearer <token>} and the caller's own {@link Priority}
- * declaration as {@code X-Priority} (meta#37). The token is never stored.
+ * <p>Requests carry no credential and no priority hint: st-gateway injects the agent
+ * token (auth-design.md decision 5) and derives priority from the identity it verifies
+ * itself (decision 2). This service holds nothing a caller could spoof.
  *
  * <p>Every failure mode leaves as an {@link ApiException} with a deliberate status:
  * an upstream 4xx keeps its status, an upstream 5xx and an unreachable gateway both
@@ -56,23 +55,22 @@ public class SpaceTradersClient {
      *
      * @param systemSymbol   e.g. {@code X1-FQ86}
      * @param waypointSymbol e.g. {@code X1-FQ86-B29}
-     * @param token          bare SpaceTraders token; sent as {@code Bearer}, never stored
      */
-    public JsonNode fetchWaypoint(String systemSymbol, String waypointSymbol, String token, Priority priority) {
+    public JsonNode fetchWaypoint(String systemSymbol, String waypointSymbol) {
         return fetchOne("/systems/{system}/waypoints/{waypoint}",
-                "waypoint " + waypointSymbol, token, priority, systemSymbol, waypointSymbol);
+                "waypoint " + waypointSymbol, systemSymbol, waypointSymbol);
     }
 
     /** Fetch market data (imports/exports/prices) for a waypoint. */
-    public JsonNode fetchMarket(String systemSymbol, String waypointSymbol, String token, Priority priority) {
+    public JsonNode fetchMarket(String systemSymbol, String waypointSymbol) {
         return fetchOne("/systems/{system}/waypoints/{waypoint}/market",
-                "market at " + waypointSymbol, token, priority, systemSymbol, waypointSymbol);
+                "market at " + waypointSymbol, systemSymbol, waypointSymbol);
     }
 
     /** Fetch shipyard data (ships for sale) for a waypoint. */
-    public JsonNode fetchShipyard(String systemSymbol, String waypointSymbol, String token, Priority priority) {
+    public JsonNode fetchShipyard(String systemSymbol, String waypointSymbol) {
         return fetchOne("/systems/{system}/waypoints/{waypoint}/shipyard",
-                "shipyard at " + waypointSymbol, token, priority, systemSymbol, waypointSymbol);
+                "shipyard at " + waypointSymbol, systemSymbol, waypointSymbol);
     }
 
     /**
@@ -83,7 +81,7 @@ public class SpaceTradersClient {
      * is a short page; {@code meta.total}, when present, only lets the walk stop one request
      * earlier.
      */
-    public List<JsonNode> fetchWaypointsBySystem(String systemSymbol, String token, Priority priority) {
+    public List<JsonNode> fetchWaypointsBySystem(String systemSymbol) {
         String context = "system " + systemSymbol;
         log.debug("Fetching all waypoints for {}", context);
 
@@ -98,7 +96,7 @@ public class SpaceTradersClient {
                                .queryParam("page", currentPage)
                                .queryParam("limit", PAGE_LIMIT)
                                .build(systemSymbol)),
-                    context, token, priority);
+                    context);
 
             JsonNode root = readTree(body, context);
             JsonNode data = root.path("data");
@@ -125,18 +123,15 @@ public class SpaceTradersClient {
 
     // ── shared request plumbing ──────────────────────────────────────────────
 
-    private JsonNode fetchOne(String path, String context, String token, Priority priority, Object... uriVars) {
+    private JsonNode fetchOne(String path, String context, Object... uriVars) {
         log.debug("Fetching {} from SpaceTraders", context);
-        String body = exchange(restClient.get().uri(path, uriVars), context, token, priority);
+        String body = exchange(restClient.get().uri(path, uriVars), context);
         return requireData(body, context);
     }
 
-    private String exchange(RestClient.RequestHeadersSpec<?> spec, String context,
-                            String token, Priority priority) {
+    private String exchange(RestClient.RequestHeadersSpec<?> spec, String context) {
         try {
-            return spec.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                    .header("X-Priority", priority.wireValue())
-                    .retrieve()
+            return spec.retrieve()
                     .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
                         HttpStatus status = HttpStatus.resolve(res.getStatusCode().value());
                         throw new ApiException(status != null ? status : HttpStatus.BAD_GATEWAY,

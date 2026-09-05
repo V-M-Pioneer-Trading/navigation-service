@@ -2,7 +2,6 @@ package de.vnm.navigation.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import de.vnm.navigation.client.Priority;
 import de.vnm.navigation.client.SpaceTradersClient;
 import de.vnm.navigation.repository.ShipyardRepository;
 import org.springframework.stereotype.Service;
@@ -28,8 +27,7 @@ public class ShipyardService extends CachedResourceService {
     }
 
     @Override
-    protected JsonNode fetchUpstream(String systemSymbol, String waypointSymbol,
-                                     String token, Priority priority) {
-        return spaceTradersClient.fetchShipyard(systemSymbol, waypointSymbol, token, priority);
+    protected JsonNode fetchUpstream(String systemSymbol, String waypointSymbol) {
+        return spaceTradersClient.fetchShipyard(systemSymbol, waypointSymbol);
     }
 }
