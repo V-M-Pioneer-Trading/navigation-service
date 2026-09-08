@@ -83,6 +83,40 @@ class WaypointControllerTest {
                .andExpect(status().isNotFound());
     }
 
+    /**
+     * The relay is only worth anything if it survives the last hop. A gateway 503 has to
+     * reach the caller as a 503 carrying the gateway's own sentence - a 502 with the body
+     * dropped is what this used to be, and it reads as a transient outage rather than as
+     * a credential an operator has to configure.
+     */
+    @Test
+    void getWaypoint_gatewaySays503_relaysTheStatusAndTheSentence() throws Exception {
+        when(waypointService.getWaypoint(any(), any(), anyBoolean()))
+                .thenThrow(new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "SpaceTraders credential not configured"));
+
+        mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL)
+                        .header("Authorization", TestClerk.bearer()))
+               .andExpect(status().isServiceUnavailable())
+               .andExpect(jsonPath("$.detail").value("SpaceTraders credential not configured"));
+    }
+
+    /**
+     * st-gateway forwards pacing headers on a passed-through 429 so a caller can back off
+     * rather than hammer the shared budget. Relaying the status without them keeps the
+     * news and drops the instructions.
+     */
+    @Test
+    void getWaypoint_gatewaySays429_relaysThePacingHeaders() throws Exception {
+        when(waypointService.getWaypoint(any(), any(), anyBoolean()))
+                .thenThrow(new ApiException(HttpStatus.TOO_MANY_REQUESTS, "You have reached your API limit.",
+                        java.util.Map.of("Retry-After", "3")));
+
+        mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}", SYMBOL)
+                        .header("Authorization", TestClerk.bearer()))
+               .andExpect(status().isTooManyRequests())
+               .andExpect(header().string("Retry-After", "3"));
+    }
+
     @Test
     void getWaypoint_upstreamReturns401_propagatesUnauthorized() throws Exception {
         when(waypointService.getWaypoint(any(), any(), anyBoolean()))
