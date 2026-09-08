@@ -66,7 +66,9 @@ Each of these is stated so a violation is visible in a diff:
    resulting `Session` (subject + scopes) travels, and it is never persisted or logged.
 2. **Every failure that is not a bug leaves as `ApiException`.** Anything else reaching the
    handler is a 500 and means something was missed. In particular, no HTTP or JSON
-   exception may escape `SpaceTradersClient`.
+   exception may escape `SpaceTradersClient`. Note that a `500` on the wire is now three
+   things — an unmapped exception, a corrupt cache row, and a relayed gateway `500` — so
+   read the message before concluding which; only the first is a bug here.
 3. **Nothing returns `null` or an empty node to mean "failed".** A missing `data` envelope,
    an unreadable body and an unreachable gateway all throw.
 4. **This service decides one upstream verdict and relays the rest.** "st-gateway did not
@@ -138,13 +140,13 @@ Changing any of these breaks a consumer:
 
 ## Testing harness
 
-Five levels, deliberately:
+Six levels, deliberately:
 
 | Level | Example | What it is for |
 |-------|---------|----------------|
 | Plain unit | `SymbolsTest` | Pure logic. |
 | Mockito service | `WaypointServiceTest` | Cache decisions with repository and client mocked. |
-| `MockRestServiceServer` | `SpaceTradersClientTest` | The wire: request shape, pagination, status mapping. Nothing else exercises the client — every other test mocks it. |
+| `MockRestServiceServer` | `SpaceTradersClientTest` | The wire: request shape, pagination, status mapping. Only this and the conformance test below exercise the client; every other test mocks it. |
 | Vendored fixtures | `GatewayErrorConformanceTest` | The shared upstream-error contract, one generated test per condition. The cases in `src/test/resources/gateway-errors.json` are a verbatim copy of `meta/fixtures/gateway-errors.json` — **change meta first, then re-copy**, or the copy is just a local opinion. |
 | `@WebMvcTest` + real filter | `ClerkAuthFilterTest` | The authorization rule end to end with a per-run keypair (`auth/TestClerk`). No stub verifier. |
 | `@SpringBootTest` + real SQLite | `NavigationCacheIntegrationTest` | Schema, SQL, transactions. The only level that can catch a rollback bug. |

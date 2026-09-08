@@ -37,7 +37,13 @@ public class ShipyardController {
                      content = @Content),
         @ApiResponse(responseCode = "404", description = "Waypoint has no shipyard",
                      content = @Content),
-        @ApiResponse(responseCode = "502", description = "SpaceTraders upstream error",
+        @ApiResponse(responseCode = "4XX", description = "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected",
+                     content = @Content),
+        @ApiResponse(responseCode = "503", description = "Relayed from st-gateway: no SpaceTraders credential configured, or auth-service unavailable",
+                     content = @Content),
+        @ApiResponse(responseCode = "504", description = "st-gateway did not answer",
+                     content = @Content),
+        @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
                      content = @Content)
     })
     @GetMapping("/waypoints/{symbol}/shipyard")
@@ -61,7 +67,14 @@ public class ShipyardController {
         @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
         @ApiResponse(responseCode = "401", description = "No Clerk session, or the presented one did not verify", content = @Content),
         @ApiResponse(responseCode = "404", description = "Waypoint has no shipyard", content = @Content),
-        @ApiResponse(responseCode = "502", description = "Upstream error", content = @Content)
+        @ApiResponse(responseCode = "4XX", description = "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected",
+                     content = @Content),
+        @ApiResponse(responseCode = "503", description = "Relayed from st-gateway: no SpaceTraders credential configured, or auth-service unavailable",
+                     content = @Content),
+        @ApiResponse(responseCode = "504", description = "st-gateway did not answer",
+                     content = @Content),
+        @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
+                     content = @Content)
     })
     @PostMapping("/waypoints/{symbol}/shipyard/refresh")
     public ResponseEntity<JsonNode> refreshShipyard(

@@ -60,6 +60,14 @@ public class SpaceTradersClient {
     private static final int MAX_MESSAGE_LENGTH = 500;
 
     /**
+     * How much of an error body is worth reading at all. Generous next to
+     * {@link #MAX_MESSAGE_LENGTH} because a real envelope must parse whole, and small
+     * enough that a broken intermediary answering with a stream cannot be bounded only
+     * by the heap.
+     */
+    private static final int MAX_ERROR_BODY_BYTES = 64 * 1024;
+
+    /**
      * Pacing signals st-gateway forwards on a passed-through 429, and that a caller needs
      * in order to back off rather than hammer the shared budget.
      */
@@ -178,7 +186,7 @@ public class SpaceTradersClient {
     /** Turns st-gateway's answer into this service's, changing as little as possible. */
     private ApiException relay(ClientHttpResponse res, String context) throws IOException {
         HttpStatusCode status = res.getStatusCode();
-        String body = new String(res.getBody().readAllBytes(), StandardCharsets.UTF_8);
+        String body = new String(res.getBody().readNBytes(MAX_ERROR_BODY_BYTES), StandardCharsets.UTF_8);
         String message = upstreamMessage(body);
         // The context lives in the log rather than in the message: what the caller needs
         // is the upstream's own sentence, unaltered, so that matching on it downstream

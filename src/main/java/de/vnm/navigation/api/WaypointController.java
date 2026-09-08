@@ -51,7 +51,13 @@ public class WaypointController {
                      content = @Content),
         @ApiResponse(responseCode = "404", description = "Waypoint not found in SpaceTraders",
                      content = @Content),
-        @ApiResponse(responseCode = "502", description = "SpaceTraders upstream error",
+        @ApiResponse(responseCode = "4XX", description = "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected",
+                     content = @Content),
+        @ApiResponse(responseCode = "503", description = "Relayed from st-gateway: no SpaceTraders credential configured, or auth-service unavailable",
+                     content = @Content),
+        @ApiResponse(responseCode = "504", description = "st-gateway did not answer",
+                     content = @Content),
+        @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
                      content = @Content)
     })
     @GetMapping("/waypoints/{symbol}")
@@ -76,7 +82,14 @@ public class WaypointController {
         @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
         @ApiResponse(responseCode = "401", description = "No Clerk session, or the presented one did not verify", content = @Content),
         @ApiResponse(responseCode = "404", description = "Waypoint not found", content = @Content),
-        @ApiResponse(responseCode = "502", description = "Upstream error", content = @Content)
+        @ApiResponse(responseCode = "4XX", description = "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected",
+                     content = @Content),
+        @ApiResponse(responseCode = "503", description = "Relayed from st-gateway: no SpaceTraders credential configured, or auth-service unavailable",
+                     content = @Content),
+        @ApiResponse(responseCode = "504", description = "st-gateway did not answer",
+                     content = @Content),
+        @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
+                     content = @Content)
     })
     @PostMapping("/waypoints/{symbol}/refresh")
     public ResponseEntity<JsonNode> refreshWaypoint(
@@ -104,7 +117,14 @@ public class WaypointController {
         @ApiResponse(responseCode = "401", description = "Not cached and caller is anonymous",
                      content = @Content),
         @ApiResponse(responseCode = "404", description = "System not found", content = @Content),
-        @ApiResponse(responseCode = "502", description = "Upstream error", content = @Content)
+        @ApiResponse(responseCode = "4XX", description = "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected",
+                     content = @Content),
+        @ApiResponse(responseCode = "503", description = "Relayed from st-gateway: no SpaceTraders credential configured, or auth-service unavailable",
+                     content = @Content),
+        @ApiResponse(responseCode = "504", description = "st-gateway did not answer",
+                     content = @Content),
+        @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
+                     content = @Content)
     })
     @GetMapping("/systems/{systemSymbol}/waypoints")
     public ResponseEntity<Map<String, Object>> getWaypointsBySystem(
@@ -127,7 +147,14 @@ public class WaypointController {
         @ApiResponse(responseCode = "200", description = "Updated list of waypoints"),
         @ApiResponse(responseCode = "400", description = "Malformed system symbol", content = @Content),
         @ApiResponse(responseCode = "401", description = "No Clerk session, or the presented one did not verify", content = @Content),
-        @ApiResponse(responseCode = "502", description = "Upstream error", content = @Content)
+        @ApiResponse(responseCode = "4XX", description = "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected",
+                     content = @Content),
+        @ApiResponse(responseCode = "503", description = "Relayed from st-gateway: no SpaceTraders credential configured, or auth-service unavailable",
+                     content = @Content),
+        @ApiResponse(responseCode = "504", description = "st-gateway did not answer",
+                     content = @Content),
+        @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
+                     content = @Content)
     })
     @PostMapping("/systems/{systemSymbol}/waypoints/refresh")
     public ResponseEntity<Map<String, Object>> refreshWaypointsBySystem(

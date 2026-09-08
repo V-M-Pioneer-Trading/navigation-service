@@ -26,6 +26,12 @@ public class CorsConfig implements WebMvcConfigurer {
         registry.addMapping("/api/**")
                 .allowedOrigins(allowedOrigins)
                 .allowedMethods("GET", "POST")
-                .allowedHeaders(HttpHeaders.CONTENT_TYPE, HttpHeaders.AUTHORIZATION);
+                .allowedHeaders(HttpHeaders.CONTENT_TYPE, HttpHeaders.AUTHORIZATION)
+                // Pacing headers relayed from st-gateway. None of these is
+                // CORS-safelisted, so without this the browser can see the 429
+                // and not the instructions that came with it — the relay would
+                // reach the network and stop at the last hop that matters.
+                .exposedHeaders(HttpHeaders.RETRY_AFTER,
+                        "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset");
     }
 }

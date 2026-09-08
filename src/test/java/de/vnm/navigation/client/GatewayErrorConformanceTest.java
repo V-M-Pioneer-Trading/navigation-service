@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -91,7 +92,23 @@ class GatewayErrorConformanceTest {
               .andRespond(withStatus(status).contentType(MediaType.APPLICATION_JSON).headers(headers).body(body));
     }
 
+    /**
+     * Every assertion key the fixtures may use. An unrecognised one fails the case rather
+     * than being skipped: when meta adds a key, a copy that does not understand it would
+     * otherwise degrade silently to a status-only test and go on reporting green — a
+     * conformance suite that stops conforming without saying so.
+     */
+    private static final Set<String> KNOWN_EXPECTATIONS =
+            Set.of("status", "message", "messageContains", "messageNotEmpty", "messageMaxLength", "headers");
+
     private void assertRelayed(ApiException thrown, JsonNode expect) {
+        List<String> unknown = new ArrayList<>();
+        expect.fieldNames().forEachRemaining(name -> {
+            if (!KNOWN_EXPECTATIONS.contains(name)) unknown.add(name);
+        });
+        assertThat(unknown).as("expectation keys this test knows how to check").isEmpty();
+
+        assertThat(expect.hasNonNull("status")).as("every case asserts a status").isTrue();
         assertThat(thrown.getStatus().value()).as("status").isEqualTo(expect.path("status").asInt());
 
         String message = thrown.getMessage();

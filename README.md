@@ -237,7 +237,7 @@ Single resources return the raw SpaceTraders object. System listings wrap it:
 | `4xx`/`5xx` from st-gateway | Relayed unchanged, with the gateway's own message and its `Retry-After` / `X-RateLimit-*` headers. That includes `404` for a waypoint that does not exist, `429` when the shared rate budget is spent, and `503 SpaceTraders credential not configured` when auth-service holds no agent token. |
 | `504`  | st-gateway did not answer at all — unreachable, DNS failure, or a read timeout.    |
 | `502`  | st-gateway answered with something this service could not read.                    |
-| `500`  | A cached row that can no longer be parsed. Refresh the resource to clear it.       |
+| `500`  | A cached row that can no longer be parsed (refresh the resource to clear it) — or a relayed gateway `500`. The message says which. |
 
 Everything except the relayed row is this service's own verdict. The relayed row is
 st-gateway's: it is the only party that talked to SpaceTraders and the only one that can
