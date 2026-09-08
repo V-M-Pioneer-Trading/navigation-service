@@ -66,8 +66,9 @@ flowchart TD
     F -- no --> F1["401 Unauthorized"]
     F -- yes --> G["Fetch via st-gateway"]
     G --> H{"Upstream result"}
-    H -- "4xx" --> H1["Same status: 401 / 404 / ..."]
-    H -- "5xx, unreachable,<br/>or unreadable body" --> H2["502 Bad Gateway"]
+    H -- "any error status" --> H1["Same status and message,<br/>plus pacing headers"]
+    H -- "no answer" --> H3["504 Gateway Timeout"]
+    H -- "unreadable body" --> H2["502 Bad Gateway"]
     H -- ok --> I["Store, then 200"]
 ```
 
@@ -143,7 +144,7 @@ The SQLite file and its parent directory are created on first run.
 
 Upstream calls need st-gateway on `ST_GATEWAY_URL` (default `http://localhost:3002`).
 Without it the service still starts and still serves everything already cached; live
-fetches answer `502`.
+fetches answer `504`.
 
 ### Configuration
 
@@ -233,9 +234,19 @@ Single resources return the raw SpaceTraders object. System listings wrap it:
 | `400`  | Malformed waypoint or system symbol.                                              |
 | `401`  | Invalid session anywhere; no session on a refresh; or an anonymous cache miss.     |
 | `403`  | A verified session without `universe:refresh` on a refresh route.                 |
-| `404`  | Waypoint, system, market or shipyard not found upstream.                          |
-| `502`  | st-gateway unreachable, upstream 5xx, or a response this service could not read.   |
-| `500`  | A cached row that can no longer be parsed. Refresh the resource to clear it.       |
+| `4xx`/`5xx` from st-gateway | Relayed unchanged, with the gateway's own message and its `Retry-After` / `X-RateLimit-*` headers. That includes `404` for a waypoint that does not exist, `429` when the shared rate budget is spent, and `503 SpaceTraders credential not configured` when auth-service holds no agent token. |
+| `504`  | st-gateway did not answer at all — unreachable, DNS failure, or a read timeout.    |
+| `502`  | st-gateway answered with something this service could not read.                    |
+| `500`  | A cached row that can no longer be parsed (refresh the resource to clear it) — or a relayed gateway `500`. The message says which. |
+
+Everything except the relayed row is this service's own verdict. The relayed row is
+st-gateway's: it is the only party that talked to SpaceTraders and the only one that can
+see whether a credential exists, so re-deciding its answer here would be a guess
+overwriting a fact. A `401` can therefore arrive either way — from this service, meaning
+your session — or relayed, meaning the agent token st-gateway injects was rejected; the
+message says which. The rule and its conformance cases are
+[specified in meta](https://github.com/V-M-Pioneer-Trading/meta/blob/main/docs/design/upstream-errors.md)
+and driven from a vendored copy of its fixtures.
 
 ---
 

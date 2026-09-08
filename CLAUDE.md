@@ -28,7 +28,7 @@ build-script change working on both.
 | `auth/ClerkVerifier` | Networkless RS256 verification; PEM parsing; claim shape | nimbus-jose-jwt |
 | `auth/ClerkAuthFilter` | The one authorization rule for `/api/navigation/v1/**`; the family error envelope | `auth` |
 | `auth/Session`, `auth/Scopes` | The verified identity handed to controllers; the scope literals | — |
-| `client/SpaceTradersClient` | Every outbound HTTP call, pagination, upstream→status mapping | `exception` |
+| `client/SpaceTradersClient` | Every outbound HTTP call, pagination, and the relay of st-gateway's status, message and pacing headers | `exception` |
 | `service/WaypointService` | Waypoint and system-listing cache logic, transactions | `client`, `repository`, `model` |
 | `service/CachedResourceService` | The shared cache-then-fetch sequence for symbol-keyed resources | `client`, `repository`, `model` |
 | `service/MarketService`, `service/ShipyardService` | Only what differs: repository, upstream call, TTL | `CachedResourceService` |
@@ -66,23 +66,32 @@ Each of these is stated so a violation is visible in a diff:
    resulting `Session` (subject + scopes) travels, and it is never persisted or logged.
 2. **Every failure that is not a bug leaves as `ApiException`.** Anything else reaching the
    handler is a 500 and means something was missed. In particular, no HTTP or JSON
-   exception may escape `SpaceTradersClient`.
+   exception may escape `SpaceTradersClient`. Note that a `500` on the wire is now three
+   things — an unmapped exception, a corrupt cache row, and a relayed gateway `500` — so
+   read the message before concluding which; only the first is a bug here.
 3. **Nothing returns `null` or an empty node to mean "failed".** A missing `data` envelope,
    an unreadable body and an unreachable gateway all throw.
-4. **A system listing is served from SQLite only when `system_fetches` has that system.**
+4. **This service decides one upstream verdict and relays the rest.** "st-gateway did not
+   answer me" is a `504` and is genuinely its own observation; every status the gateway
+   *did* send is relayed unchanged, with the gateway's `error.message` and its pacing
+   headers. `502` means only "answered with something unreadable". Collapsing an upstream
+   5xx used to lose `503 SpaceTraders credential not configured`, the one sentence that
+   says an operator must act rather than wait. The rule is normative across all three
+   gateway clients: `meta/docs/design/upstream-errors.md`.
+5. **A system listing is served from SQLite only when `system_fetches` has that system.**
    Rows in `waypoints` alone are never sufficient.
-5. **`deleteBySystemSymbol` is only ever called inside a transaction** that also performs
+6. **`deleteBySystemSymbol` is only ever called inside a transaction** that also performs
    the inserts and the `markComplete`.
-6. **Upstream rows are mapped to entities before the first write.** A malformed waypoint in
+7. **Upstream rows are mapped to entities before the first write.** A malformed waypoint in
    a response must abort the refresh with the old listing still on disk.
-7. **Symbols are validated before any cache or upstream access**, on every path, by
+8. **Symbols are validated before any cache or upstream access**, on every path, by
    `Symbols`.
-8. **A cached row can never wedge a resource permanently.** An unreadable `fetched_at`
+9. **A cached row can never wedge a resource permanently.** An unreadable `fetched_at`
    reads as stale; a corrupt blob is a 500 that `forceRefresh` clears.
-9. **A presented token that does not verify is a 401, never anonymous.** Downgrading a bad
+10. **A presented token that does not verify is a 401, never anonymous.** Downgrading a bad
    credential to "no credential" would let an expired session read the cache silently and
    hide a misconfigured trust anchor. Only a *missing* `Authorization` header is anonymous.
-10. **A zero TTL disables caching outright.** It is an explicit branch, never a consequence
+11. **A zero TTL disables caching outright.** It is an explicit branch, never a consequence
     of the timestamp comparison — a row stamped at or after "now" must not read as a hit on
     a service configured not to cache.
 
@@ -131,13 +140,14 @@ Changing any of these breaks a consumer:
 
 ## Testing harness
 
-Five levels, deliberately:
+Six levels, deliberately:
 
 | Level | Example | What it is for |
 |-------|---------|----------------|
 | Plain unit | `SymbolsTest` | Pure logic. |
 | Mockito service | `WaypointServiceTest` | Cache decisions with repository and client mocked. |
-| `MockRestServiceServer` | `SpaceTradersClientTest` | The wire: request shape, pagination, status mapping. Nothing else exercises the client — every other test mocks it. |
+| `MockRestServiceServer` | `SpaceTradersClientTest` | The wire: request shape, pagination, status mapping. Only this and the conformance test below exercise the client; every other test mocks it. |
+| Vendored fixtures | `GatewayErrorConformanceTest` | The shared upstream-error contract, one generated test per condition. The cases in `src/test/resources/gateway-errors.json` are a verbatim copy of `meta/fixtures/gateway-errors.json` — **change meta first, then re-copy**, or the copy is just a local opinion. |
 | `@WebMvcTest` + real filter | `ClerkAuthFilterTest` | The authorization rule end to end with a per-run keypair (`auth/TestClerk`). No stub verifier. |
 | `@SpringBootTest` + real SQLite | `NavigationCacheIntegrationTest` | Schema, SQL, transactions. The only level that can catch a rollback bug. |
 
@@ -176,7 +186,7 @@ Notes that will save time:
 - **`MockRestServiceServer` expectations are ordered.** A pagination test must declare
   `page=1` before `page=2`, and the full URL including query string has to match.
 
-No flaky test is currently known. The suite was at 99 tests when this file was last
+No flaky test is currently known. The suite was at 115 tests when this file was last
 updated.
 
 ## Extension conventions
@@ -187,7 +197,7 @@ updated.
   Do not copy `MarketService`'s body; it has none worth copying.
 - **A new upstream call**: add a method to `SpaceTradersClient` delegating to `fetchOne`.
   Do not hand-roll `retrieve()`/`onStatus`; the shared `exchange` is what guarantees
-  invariants 2 and 3.
+  invariants 2, 3 and 4.
 - **A new header**: add it to `CorsConfig`'s allow-list. A header that is not allow-listed
   silently fails in the browser only. Think twice: the last two custom headers were both
   deleted as pass-through.

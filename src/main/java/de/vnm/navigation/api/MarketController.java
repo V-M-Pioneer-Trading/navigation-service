@@ -38,7 +38,13 @@ public class MarketController {
                      content = @Content),
         @ApiResponse(responseCode = "404", description = "Waypoint has no marketplace",
                      content = @Content),
-        @ApiResponse(responseCode = "502", description = "SpaceTraders upstream error",
+        @ApiResponse(responseCode = "4XX", description = "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected",
+                     content = @Content),
+        @ApiResponse(responseCode = "503", description = "Relayed from st-gateway: no SpaceTraders credential configured, or auth-service unavailable",
+                     content = @Content),
+        @ApiResponse(responseCode = "504", description = "st-gateway did not answer",
+                     content = @Content),
+        @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
                      content = @Content)
     })
     @GetMapping("/waypoints/{symbol}/market")
@@ -62,7 +68,14 @@ public class MarketController {
         @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
         @ApiResponse(responseCode = "401", description = "No Clerk session, or the presented one did not verify", content = @Content),
         @ApiResponse(responseCode = "404", description = "Waypoint has no marketplace", content = @Content),
-        @ApiResponse(responseCode = "502", description = "Upstream error", content = @Content)
+        @ApiResponse(responseCode = "4XX", description = "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected",
+                     content = @Content),
+        @ApiResponse(responseCode = "503", description = "Relayed from st-gateway: no SpaceTraders credential configured, or auth-service unavailable",
+                     content = @Content),
+        @ApiResponse(responseCode = "504", description = "st-gateway did not answer",
+                     content = @Content),
+        @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
+                     content = @Content)
     })
     @PostMapping("/waypoints/{symbol}/market/refresh")
     public ResponseEntity<JsonNode> refreshMarket(

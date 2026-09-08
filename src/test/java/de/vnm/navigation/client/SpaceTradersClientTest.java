@@ -20,7 +20,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.headerDoesNotExist;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -96,23 +95,35 @@ class SpaceTradersClientTest {
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
     }
 
+    /**
+     * An upstream 5xx used to collapse into a bare 502 with the body discarded, which is
+     * how {@code 503 SpaceTraders credential not configured} — the gateway's way of saying
+     * an operator must act rather than wait — arrived here indistinguishable from a
+     * transient outage.
+     */
     @Test
-    void fetchWaypoint_upstream500_becomesBadGateway() {
+    void fetchWaypoint_upstream503_keepsTheStatusAndTheGatewaysSentence() {
         server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
-              .andRespond(withServerError());
+              .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
+                      .contentType(MediaType.APPLICATION_JSON)
+                      .body("""
+                              {"error":{"message":"SpaceTraders credential not configured"}}"""));
 
         assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT))
                 .isInstanceOf(ApiException.class)
-                .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY));
+                .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE))
+                .hasMessage("SpaceTraders credential not configured");
     }
 
     /**
      * Regression: a transport failure (st-gateway down, DNS failure, read timeout) used to
      * escape as a raw {@code ResourceAccessException}, which no handler mapped, so callers
-     * saw an undifferentiated 500 instead of the documented 502.
+     * saw an undifferentiated 500. It is a 504 rather than a 502 because it is the one
+     * verdict this service is entitled to reach on its own: the gateway never answered,
+     * where 502 now means it answered with something unusable.
      */
     @Test
-    void fetchWaypoint_gatewayUnreachable_becomesBadGateway() {
+    void fetchWaypoint_gatewayUnreachable_becomesGatewayTimeout() {
         server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
               .andRespond(request -> {
                   throw new IOException("Connection refused");
@@ -120,8 +131,8 @@ class SpaceTradersClientTest {
 
         assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT))
                 .isInstanceOf(ApiException.class)
-                .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY))
-                .hasMessageContaining("unreachable");
+                .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.GATEWAY_TIMEOUT))
+                .hasMessageContaining("did not answer");
     }
 
     /**
