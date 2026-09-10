@@ -31,7 +31,8 @@ public class MarketService extends CachedResourceService {
     }
 
     @Override
-    protected JsonNode fetchUpstream(String systemSymbol, String waypointSymbol) {
-        return spaceTradersClient.fetchMarket(systemSymbol, waypointSymbol);
+    protected JsonNode fetchUpstream(String systemSymbol, String waypointSymbol,
+                                     String callerAuthorization) {
+        return spaceTradersClient.fetchMarket(systemSymbol, waypointSymbol, callerAuthorization);
     }
 }

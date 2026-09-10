@@ -34,6 +34,8 @@ class ShipyardServiceTest {
     private static final Session OPERATOR = new Session("user_test", java.util.Set.of("universe:refresh"));
     private static final String SYMBOL = "X1-FQ86-B29";
     private static final String SYSTEM = "X1-FQ86";
+    /** What the controller hands down: the caller's inbound header, forwarded verbatim. */
+    private static final String SESSION_HEADER = "Bearer eyJhbGciOiJSUzI1NiJ9.e30.c2ln";
 
     @BeforeEach
     void setUp() {
@@ -44,7 +46,7 @@ class ShipyardServiceTest {
     void get_cacheHit_returnsDataWithoutCallingUpstream() {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(shipyardEntity()));
 
-        JsonNode result = service.get(SYMBOL, OPERATOR, false);
+        JsonNode result = service.get(SYMBOL, OPERATOR, false, SESSION_HEADER);
 
         assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
         verifyNoInteractions(spaceTradersClient);
@@ -55,7 +57,7 @@ class ShipyardServiceTest {
     void get_veryOldCacheRow_isStillServed() {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(shipyardEntity()));
 
-        service.get(SYMBOL, OPERATOR, false);
+        service.get(SYMBOL, OPERATOR, false, SESSION_HEADER);
 
         verifyNoInteractions(spaceTradersClient);
     }
@@ -63,10 +65,10 @@ class ShipyardServiceTest {
     @Test
     void get_cacheMiss_fetchesFromUpstreamAndStores() throws Exception {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.empty());
-        when(spaceTradersClient.fetchShipyard(SYSTEM, SYMBOL))
+        when(spaceTradersClient.fetchShipyard(SYSTEM, SYMBOL, SESSION_HEADER))
                 .thenReturn(upstreamShipyard());
 
-        service.get(SYMBOL, OPERATOR, false);
+        service.get(SYMBOL, OPERATOR, false, SESSION_HEADER);
 
         ArgumentCaptor<LocationDataEntity> captor = ArgumentCaptor.forClass(LocationDataEntity.class);
         verify(repository).upsert(captor.capture());
@@ -76,13 +78,13 @@ class ShipyardServiceTest {
 
     @Test
     void refresh_bypassesCacheAndFetchesUpstream() throws Exception {
-        when(spaceTradersClient.fetchShipyard(SYSTEM, SYMBOL))
+        when(spaceTradersClient.fetchShipyard(SYSTEM, SYMBOL, SESSION_HEADER))
                 .thenReturn(upstreamShipyard());
 
-        service.refresh(SYMBOL, OPERATOR);
+        service.refresh(SYMBOL, OPERATOR, SESSION_HEADER);
 
         verify(repository, never()).findBySymbol(any());
-        verify(spaceTradersClient).fetchShipyard(SYSTEM, SYMBOL);
+        verify(spaceTradersClient).fetchShipyard(SYSTEM, SYMBOL, SESSION_HEADER);
     }
 
     // ── anonymous callers (auth-design.md decision 18) ──────────────────────
@@ -91,7 +93,7 @@ class ShipyardServiceTest {
     void get_cacheHit_noTokenAtAll_stillSucceeds() {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(shipyardEntity()));
 
-        JsonNode result = service.get(SYMBOL, null, false);
+        JsonNode result = service.get(SYMBOL, null, false, null);
 
         assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
         verifyNoInteractions(spaceTradersClient);
@@ -101,7 +103,7 @@ class ShipyardServiceTest {
     void get_cacheMiss_noToken_throwsUnauthorizedWithoutCallingUpstream() {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.get(SYMBOL, null, false))
+        assertThatThrownBy(() -> service.get(SYMBOL, null, false, null))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus())
                         .isEqualTo(HttpStatus.UNAUTHORIZED));

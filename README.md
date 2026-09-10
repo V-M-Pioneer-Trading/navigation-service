@@ -40,14 +40,25 @@ flowchart LR
     MCP --> NAV
 
     NAV <-->|"cache hit / store"| DB
-    NAV -->|"cache miss only<br/>no credential, no priority hint"| GW
+    NAV -->|"cache miss only<br/>caller's Clerk session forwarded verbatim<br/>no game token, no priority hint"| GW
     GW --> ST
 ```
 
 The service never calls SpaceTraders directly. Every upstream request goes through
 st-gateway, which owns the rate budget, injects the fleet's agent token itself
 (auth-design.md decision 5) and derives queue priority from the identity it verifies
-(decision 2). This service sends it nothing a caller could spoof.
+(decision 2).
+
+That last part is why an outbound request carries the caller's `Authorization` header,
+byte for byte, exactly as it arrived: st-gateway checks the signature itself and puts a
+human operator's call in the `interactive` queue and everything else in `background`. A
+backend that verified the session and then forwarded nothing would silently drop every
+one of its calls into `background` — no error, just a dashboard waiting behind the
+autopilot. Nothing a caller sends can be *spoofed* into a promotion, because the gateway
+trusts the signature rather than the fact that a header arrived.
+
+An anonymous caller has no session to forward, so its request goes out bare and lands in
+`background`, which is the correct lane for it.
 
 ## The read path
 
@@ -124,9 +135,15 @@ Auth failures use the fleet-wide `{"error":{"message":…}}` envelope with the s
 messages as fleet-service and agent-service, so command-interface needs one parser for
 every backend. This is the one place this service does not emit RFC 9457 problem details.
 
-No SpaceTraders credential is ever presented to this service: st-gateway holds the only
-copy and injects it upstream (decision 5). The old `X-SpaceTraders-Token` and `X-Priority`
-headers are gone; a stray one is ignored, never an error.
+A verified session is used twice: once here, to decide whether this caller may cause a
+live fetch, and once again upstream, because the header it arrived on is forwarded to
+st-gateway unchanged so the gateway can pick the queue lane (decision 2). Only a header
+that verified is relayed — a `Basic` credential, or anything else that is not a Bearer
+token, reads as anonymous here and is not passed on.
+
+No SpaceTraders game credential is ever presented to this service: st-gateway holds the
+only copy and injects it upstream (decision 5). The old `X-SpaceTraders-Token` and
+`X-Priority` headers are gone; a stray one is ignored, never an error.
 
 ---
 
@@ -277,7 +294,8 @@ and driven from a vendored copy of its fixtures.
 ## Related services
 
 - **st-gateway** — owns the SpaceTraders rate budget, the agent token, and the
-  `interactive`/`background` priority queue. All upstream traffic goes through it.
+  `interactive`/`background` priority queue. All upstream traffic goes through it, with
+  the caller's Clerk session forwarded so the gateway can pick the lane.
 - **SpaceTraders API** — `GET /systems/{system}/waypoints/{waypoint}`,
   `GET /systems/{system}/waypoints` (paginated, 20 per page),
   plus the `/market` and `/shipyard` sub-resources.

@@ -22,13 +22,13 @@ build-script change working on both.
 | File | Owns | Depends on |
 |------|------|------------|
 | `NavigationServiceApplication` | Boot entry point; registers `SqliteDirectoryInitializer` | `config` |
-| `api/WaypointController` | Waypoint and system routes; receives the verified `Session` (or null) | `service`, `auth.Session` |
+| `api/WaypointController` | Waypoint and system routes; receives the verified `Session` (or null) and the raw `Authorization` header to forward | `service`, `auth.Session` |
 | `api/MarketController`, `api/ShipyardController` | Their two routes each | `service`, `auth.Session` |
 | `api/HealthController` | `/health` and `/api/navigation/health` | — |
 | `auth/ClerkVerifier` | Networkless RS256 verification; PEM parsing; claim shape | nimbus-jose-jwt |
-| `auth/ClerkAuthFilter` | The one authorization rule for `/api/navigation/v1/**`; the family error envelope | `auth` |
+| `auth/ClerkAuthFilter` | The one authorization rule for `/api/navigation/v1/**`; the family error envelope; republishing the verified caller's raw `Authorization` header for relay | `auth` |
 | `auth/Session`, `auth/Scopes` | The verified identity handed to controllers; the scope literals | — |
-| `client/SpaceTradersClient` | Every outbound HTTP call, pagination, and the relay of st-gateway's status, message and pacing headers | `exception` |
+| `client/SpaceTradersClient` | Every outbound HTTP call, pagination, forwarding the caller's `Authorization` header, and the relay of st-gateway's status, message and pacing headers | `exception` |
 | `service/WaypointService` | Waypoint and system-listing cache logic, transactions | `client`, `repository`, `model` |
 | `service/CachedResourceService` | The shared cache-then-fetch sequence for symbol-keyed resources | `client`, `repository`, `model` |
 | `service/MarketService`, `service/ShipyardService` | Only what differs: repository, upstream call, TTL | `CachedResourceService` |
@@ -52,18 +52,28 @@ build-script change working on both.
   happened before (`MarketController` used a static on `WaypointController`; `MarketService`
   used statics on `WaypointService`). Shared behaviour goes in `Symbols`, `LiveFetch`,
   `CachedJson`, or `CachedResourceService`.
-- `client` must not import from `api` or `auth`. `SpaceTradersClient` sends no credential
-  and no priority hint: st-gateway injects the agent token and derives priority itself
-  (auth-design.md decisions 2 and 5). Adding either header back would be a regression.
+- `client` must not import from `api` or `auth`. `SpaceTradersClient` forwards exactly one
+  credential, the caller's verified Clerk session, relayed byte for byte on `Authorization`
+  so st-gateway can derive the queue lane from an identity it verifies itself (auth-design.md
+  decision 2). It arrives as a plain `String` — the raw header the filter published — because
+  the layering rule forbids a `Session` here and because the bytes are the whole point.
+  It sends **no game token and no priority hint**: st-gateway injects the agent token
+  (decision 5), and `X-Priority` was deleted because a caller-declared class lets anything
+  promote itself. Adding either of *those* two headers back is a regression. So is the
+  opposite mistake, which this service actually made: verifying the session and then
+  forwarding nothing, which silently drops every call into the background lane.
 - Only `client` performs HTTP. Only `repository` writes SQL.
 
 ## Invariants
 
 Each of these is stated so a violation is visible in a diff:
 
-1. **No SpaceTraders credential exists in this service.** Not as a parameter, not as a
-   header, not in an entity. The Clerk session token is verified and discarded; only the
-   resulting `Session` (subject + scopes) travels, and it is never persisted or logged.
+1. **No SpaceTraders game credential exists in this service.** Not as a parameter, not as a
+   header, not in an entity — st-gateway holds the only copy and injects it upstream. The
+   Clerk session is a *different* credential with different rules: the verified `Session`
+   (subject + scopes) travels for authorization decisions, and the raw `Authorization`
+   header travels beside it as a plain `String` for one purpose only, being relayed to
+   st-gateway. Neither is ever persisted, logged, or written into an entity.
 2. **Every failure that is not a bug leaves as `ApiException`.** Anything else reaching the
    handler is a 500 and means something was missed. In particular, no HTTP or JSON
    exception may escape `SpaceTradersClient`. Note that a `500` on the wire is now three
@@ -94,6 +104,14 @@ Each of these is stated so a violation is visible in a diff:
 11. **A zero TTL disables caching outright.** It is an explicit branch, never a consequence
     of the timestamp comparison — a row stamped at or after "now" must not read as a hit on
     a service configured not to cache.
+12. **Every outbound call carries the caller's `Authorization` header unchanged, or none at
+    all.** `ClerkAuthFilter` republishes the raw header as
+    `CALLER_AUTHORIZATION_ATTRIBUTE` only on the path where verification succeeded, and it
+    is threaded explicitly from controller to service to client — never reconstructed,
+    never substituted, never read from ambient request state. An anonymous caller has
+    nothing to forward and the call goes out bare; that is correct, and lands in the
+    background lane. The failure mode this guards is invisible at runtime: st-gateway
+    answers a lane-less call perfectly well, just slowly and behind the autopilot.
 
 ## Critical sequences
 
@@ -118,6 +136,7 @@ Changing any of these breaks a consumer:
 | Identifier | Depended on by |
 |------------|----------------|
 | `Authorization: Bearer <Clerk JWT>` on reads (optional) and refreshes (required, `universe:refresh`) | command-interface, automation-service |
+| That same header being relayed verbatim to st-gateway | st-gateway's `interactive`/`background` lane assignment — the dashboard's responsiveness depends on it |
 | The `{"error":{"message":…}}` auth envelope and its three messages | command-interface's shared error parser; must stay byte-identical to fleet-service's |
 | Route prefix `/api/navigation/v1` | CloudFront path routing |
 | `/health` **and** `/api/navigation/health` | Local compose probes and the production health check respectively — both mounts are load-bearing |
@@ -186,7 +205,7 @@ Notes that will save time:
 - **`MockRestServiceServer` expectations are ordered.** A pagination test must declare
   `page=1` before `page=2`, and the full URL including query string has to match.
 
-No flaky test is currently known. The suite was at 115 tests when this file was last
+No flaky test is currently known. The suite was at 117 tests when this file was last
 updated.
 
 ## Extension conventions
@@ -195,9 +214,10 @@ updated.
   table to `schema.sql`, a `LocationDataRepository` subclass naming it, a
   `CachedResourceService` subclass supplying the upstream call and TTL, and a controller.
   Do not copy `MarketService`'s body; it has none worth copying.
-- **A new upstream call**: add a method to `SpaceTradersClient` delegating to `fetchOne`.
+- **A new upstream call**: add a method to `SpaceTradersClient` delegating to `fetchOne`,
+  with `callerAuthorization` as its last parameter and threaded through from the controller.
   Do not hand-roll `retrieve()`/`onStatus`; the shared `exchange` is what guarantees
-  invariants 2, 3 and 4.
+  invariants 2, 3, 4 and 12 — including that the caller's session actually goes out.
 - **A new header**: add it to `CorsConfig`'s allow-list. A header that is not allow-listed
   silently fails in the browser only. Think twice: the last two custom headers were both
   deleted as pass-through.

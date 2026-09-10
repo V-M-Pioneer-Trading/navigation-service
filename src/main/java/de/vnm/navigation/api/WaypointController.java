@@ -67,10 +67,13 @@ public class WaypointController {
             @Parameter(description = "Bypass cache and re-fetch from SpaceTraders")
             @RequestParam(defaultValue = "false") boolean forceRefresh,
             @Parameter(hidden = true)
-            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session) {
+            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session,
+            @Parameter(hidden = true)
+            @RequestAttribute(value = ClerkAuthFilter.CALLER_AUTHORIZATION_ATTRIBUTE, required = false)
+            String callerAuthorization) {
 
         return ResponseEntity.ok(
-                waypointService.getWaypoint(symbol, session, forceRefresh));
+                waypointService.getWaypoint(symbol, session, forceRefresh, callerAuthorization));
     }
 
     @Operation(
@@ -96,10 +99,13 @@ public class WaypointController {
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")
             @PathVariable String symbol,
             @Parameter(hidden = true)
-            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session) {
+            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session,
+            @Parameter(hidden = true)
+            @RequestAttribute(value = ClerkAuthFilter.CALLER_AUTHORIZATION_ATTRIBUTE, required = false)
+            String callerAuthorization) {
 
         return ResponseEntity.ok(
-                waypointService.refreshWaypoint(symbol, session));
+                waypointService.refreshWaypoint(symbol, session, callerAuthorization));
     }
 
     // ── System waypoints ──────────────────────────────────────────────────────
@@ -133,10 +139,13 @@ public class WaypointController {
             @Parameter(description = "Bypass cache and re-fetch all waypoints for the system")
             @RequestParam(defaultValue = "false") boolean forceRefresh,
             @Parameter(hidden = true)
-            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session) {
+            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session,
+            @Parameter(hidden = true)
+            @RequestAttribute(value = ClerkAuthFilter.CALLER_AUTHORIZATION_ATTRIBUTE, required = false)
+            String callerAuthorization) {
 
         return ResponseEntity.ok(listBody(waypointService.getWaypointsBySystem(
-                systemSymbol, session, forceRefresh)));
+                systemSymbol, session, forceRefresh, callerAuthorization)));
     }
 
     @Operation(
@@ -161,10 +170,13 @@ public class WaypointController {
             @Parameter(description = "System symbol, e.g. X1-FQ86")
             @PathVariable String systemSymbol,
             @Parameter(hidden = true)
-            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session) {
+            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session,
+            @Parameter(hidden = true)
+            @RequestAttribute(value = ClerkAuthFilter.CALLER_AUTHORIZATION_ATTRIBUTE, required = false)
+            String callerAuthorization) {
 
         return ResponseEntity.ok(listBody(waypointService.refreshWaypointsBySystem(
-                systemSymbol, session)));
+                systemSymbol, session, callerAuthorization)));
     }
 
     /** {@code total} is the number of waypoints in this response, not SpaceTraders' page count. */

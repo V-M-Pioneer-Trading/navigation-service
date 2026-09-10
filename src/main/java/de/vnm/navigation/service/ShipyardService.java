@@ -27,7 +27,8 @@ public class ShipyardService extends CachedResourceService {
     }
 
     @Override
-    protected JsonNode fetchUpstream(String systemSymbol, String waypointSymbol) {
-        return spaceTradersClient.fetchShipyard(systemSymbol, waypointSymbol);
+    protected JsonNode fetchUpstream(String systemSymbol, String waypointSymbol,
+                                     String callerAuthorization) {
+        return spaceTradersClient.fetchShipyard(systemSymbol, waypointSymbol, callerAuthorization);
     }
 }
