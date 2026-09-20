@@ -66,8 +66,10 @@ class ClerkAuthFilterTest {
     /**
      * The filter publishes two things about a verified caller: the {@link Session} the
      * service reasons about, and the raw header the client forwards to st-gateway. The
-     * second is asserted byte-for-byte — st-gateway re-verifies that signature to pick the
-     * queue lane, so a reconstructed value would verify nowhere.
+     * second is asserted byte-for-byte: the contract is relay, not re-encode. This test
+     * alone would not catch a reconstruction, because it sends the canonical spelling a
+     * reconstruction would reproduce; {@link #bearerSchemeIsCaseInsensitive()} is the one
+     * that does.
      */
     @Test
     void read_withValidSession_handsTheSessionAndTheRawHeaderToTheController() throws Exception {
@@ -174,6 +176,11 @@ class ClerkAuthFilterTest {
         verify(waypointService).refreshWaypoint(SYMBOL, TestClerk.OPERATOR, bearer);
     }
 
+    /**
+     * Also the test that pins "forwarded byte for byte, never reconstructed": a filter
+     * that rebuilt the header as {@code "Bearer " + token} would hand the service the
+     * canonical spelling, not the lowercase one the caller sent.
+     */
     @Test
     void bearerSchemeIsCaseInsensitive() throws Exception {
         when(waypointService.refreshWaypoint(eq(SYMBOL), any(Session.class), any())).thenReturn(waypoint());
@@ -181,6 +188,8 @@ class ClerkAuthFilterTest {
         String lower = TestClerk.bearer().replaceFirst("^Bearer", "bearer");
         mockMvc.perform(post(REFRESH).header("Authorization", lower))
                .andExpect(status().isOk());
+
+        verify(waypointService).refreshWaypoint(SYMBOL, TestClerk.OPERATOR, lower);
     }
 
     // ── outside the guarded prefix ─────────────────────────────────────────────────────
