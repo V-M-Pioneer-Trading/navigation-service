@@ -14,7 +14,10 @@ Working notes for changing this service. Behaviour and rationale live in
 | `java -jar build/libs/navigation-service-0.0.1.jar` | Run the packaged artifact. |
 | `docker build -t navigation-service .` | Same multi-stage build CI uses. |
 
-The wrapper pins Gradle 8.4; the Docker build image and CI runner use 8.10.2. Keep any
+The wrapper pins Gradle 8.4, and that is what `./gradlew test` runs locally and in the CI
+`test` job. The Docker build image uses Gradle 8.10.2, so the image CI ships is built
+with that. Deploy permissions (`packages`, `id-token`) are declared on the CI `docker` job,
+never at workflow level. Keep any
 build-script change working on both.
 
 ## Module map
