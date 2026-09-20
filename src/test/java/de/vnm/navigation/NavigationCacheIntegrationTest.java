@@ -44,6 +44,8 @@ class NavigationCacheIntegrationTest {
 
     private static final Session OPERATOR = new Session("user_test", java.util.Set.of("universe:refresh"));
     private static final String SYSTEM = "X1-FQ86";
+    /** What a controller hands down: the caller's inbound header, forwarded verbatim. */
+    private static final String SESSION_HEADER = "Bearer eyJhbGciOiJSUzI1NiJ9.e30.c2ln";
 
     @DynamicPropertySource
     static void sqliteFile(DynamicPropertyRegistry registry) {
@@ -77,12 +79,12 @@ class NavigationCacheIntegrationTest {
 
     @Test
     void aWalkedSystemIsAfterwardsServedFromDiskWithoutACredential() {
-        when(spaceTradersClient.fetchWaypointsBySystem(SYSTEM))
+        when(spaceTradersClient.fetchWaypointsBySystem(SYSTEM, SESSION_HEADER))
                 .thenReturn(List.of(waypoint("B2"), waypoint("A1")));
-        waypointService.getWaypointsBySystem(SYSTEM, OPERATOR, false);
+        waypointService.getWaypointsBySystem(SYSTEM, OPERATOR, false, SESSION_HEADER);
         reset(spaceTradersClient);
 
-        List<JsonNode> anonymous = waypointService.getWaypointsBySystem(SYSTEM, null, false);
+        List<JsonNode> anonymous = waypointService.getWaypointsBySystem(SYSTEM, null, false, null);
 
         assertThat(anonymous).hasSize(2);
         assertThat(anonymous.stream().map(w -> w.path("symbol").asText()))
@@ -98,17 +100,17 @@ class NavigationCacheIntegrationTest {
      */
     @Test
     void aSingleWaypointLookupDoesNotMakeTheSystemLookCached() {
-        when(spaceTradersClient.fetchWaypoint(SYSTEM, "X1-FQ86-A1"))
+        when(spaceTradersClient.fetchWaypoint(SYSTEM, "X1-FQ86-A1", SESSION_HEADER))
                 .thenReturn(waypoint("A1"));
-        waypointService.getWaypoint("X1-FQ86-A1", OPERATOR, false);
+        waypointService.getWaypoint("X1-FQ86-A1", OPERATOR, false, SESSION_HEADER);
         assertThat(cachedSymbols()).containsExactly("X1-FQ86-A1");
 
-        when(spaceTradersClient.fetchWaypointsBySystem(SYSTEM))
+        when(spaceTradersClient.fetchWaypointsBySystem(SYSTEM, SESSION_HEADER))
                 .thenReturn(List.of(waypoint("A1"), waypoint("B2"), waypoint("C3")));
-        List<JsonNode> listing = waypointService.getWaypointsBySystem(SYSTEM, OPERATOR, false);
+        List<JsonNode> listing = waypointService.getWaypointsBySystem(SYSTEM, OPERATOR, false, SESSION_HEADER);
 
         assertThat(listing).hasSize(3);
-        verify(spaceTradersClient).fetchWaypointsBySystem(SYSTEM);
+        verify(spaceTradersClient).fetchWaypointsBySystem(SYSTEM, SESSION_HEADER);
         assertThat(cachedSymbols()).containsExactly("X1-FQ86-A1", "X1-FQ86-B2", "X1-FQ86-C3");
     }
 
@@ -120,18 +122,18 @@ class NavigationCacheIntegrationTest {
      */
     @Test
     void aRefreshThatFailsPartWayThroughLeavesThePreviousListingIntact() {
-        when(spaceTradersClient.fetchWaypointsBySystem(SYSTEM))
+        when(spaceTradersClient.fetchWaypointsBySystem(SYSTEM, SESSION_HEADER))
                 .thenReturn(List.of(waypoint("A1"), waypoint("B2")));
-        waypointService.getWaypointsBySystem(SYSTEM, OPERATOR, false);
+        waypointService.getWaypointsBySystem(SYSTEM, OPERATOR, false, SESSION_HEADER);
         assertThat(cachedSymbols()).containsExactly("X1-FQ86-A1", "X1-FQ86-B2");
 
-        when(spaceTradersClient.fetchWaypointsBySystem(SYSTEM))
+        when(spaceTradersClient.fetchWaypointsBySystem(SYSTEM, SESSION_HEADER))
                 .thenReturn(List.of(waypoint("C3"), waypoint("D4")));
         doThrow(new DataIntegrityViolationException("simulated write failure"))
                 .when(waypointRepository).upsert(argThat(e -> "X1-FQ86-D4".equals(e.getSymbol())));
 
         assertThatThrownBy(() ->
-                waypointService.refreshWaypointsBySystem(SYSTEM, OPERATOR))
+                waypointService.refreshWaypointsBySystem(SYSTEM, OPERATOR, SESSION_HEADER))
                 .isInstanceOf(DataIntegrityViolationException.class);
 
         assertThat(cachedSymbols()).containsExactly("X1-FQ86-A1", "X1-FQ86-B2");
@@ -141,12 +143,12 @@ class NavigationCacheIntegrationTest {
     void marketRowsSurviveARoundTripThroughSqlite() throws Exception {
         JsonNode upstream = objectMapper.readTree("""
                 {"symbol":"X1-FQ86-A1","tradeGoods":[{"symbol":"FUEL","purchasePrice":100}]}""");
-        when(spaceTradersClient.fetchMarket(SYSTEM, "X1-FQ86-A1"))
+        when(spaceTradersClient.fetchMarket(SYSTEM, "X1-FQ86-A1", SESSION_HEADER))
                 .thenReturn(upstream);
 
-        marketService.get("X1-FQ86-A1", OPERATOR, false);
+        marketService.get("X1-FQ86-A1", OPERATOR, false, SESSION_HEADER);
         reset(spaceTradersClient);
-        JsonNode fromCache = marketService.get("X1-FQ86-A1", null, false);
+        JsonNode fromCache = marketService.get("X1-FQ86-A1", null, false, null);
 
         assertThat(fromCache.path("tradeGoods").get(0).path("purchasePrice").asInt()).isEqualTo(100);
         verifyNoInteractions(spaceTradersClient);

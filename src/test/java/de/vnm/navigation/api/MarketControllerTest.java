@@ -35,6 +35,13 @@ class MarketControllerTest {
     /** What TestClerk.bearer() verifies to, so mocks can match on the exact session. */
     private static final Session OPERATOR = TestClerk.OPERATOR;
 
+    /**
+     * One fixed token for the whole class. The controller forwards the caller's inbound
+     * header onward verbatim, so a stub matching on these exact bytes is itself the proof
+     * that the header reaches the service unchanged.
+     */
+    private static final String OPERATOR_BEARER = TestClerk.bearer();
+
     @DynamicPropertySource
     static void trustAnchor(DynamicPropertyRegistry registry) {
         registry.add("clerk.jwt-key", TestClerk::publicKeyPem);
@@ -44,29 +51,29 @@ class MarketControllerTest {
 
     @Test
     void getMarket_returns200WithData() throws Exception {
-        when(marketService.get(SYMBOL, OPERATOR, false)).thenReturn(marketJson());
+        when(marketService.get(SYMBOL, OPERATOR, false, OPERATOR_BEARER)).thenReturn(marketJson());
 
         mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}/market", SYMBOL)
-                        .header("Authorization", TestClerk.bearer()))
+                        .header("Authorization", OPERATOR_BEARER))
                .andExpect(status().isOk())
                .andExpect(jsonPath("$.symbol").value(SYMBOL));
     }
 
     @Test
     void getMarket_forceRefresh_passedToService() throws Exception {
-        when(marketService.get(SYMBOL, OPERATOR, true)).thenReturn(marketJson());
+        when(marketService.get(SYMBOL, OPERATOR, true, OPERATOR_BEARER)).thenReturn(marketJson());
 
         mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}/market", SYMBOL)
                         .param("forceRefresh", "true")
-                        .header("Authorization", TestClerk.bearer()))
+                        .header("Authorization", OPERATOR_BEARER))
                .andExpect(status().isOk());
 
-        verify(marketService).get(SYMBOL, OPERATOR, true);
+        verify(marketService).get(SYMBOL, OPERATOR, true, OPERATOR_BEARER);
     }
 
     @Test
     void getMarket_noToken_stillReachesTheService() throws Exception {
-        when(marketService.get(SYMBOL, null, false)).thenReturn(marketJson());
+        when(marketService.get(SYMBOL, null, false, null)).thenReturn(marketJson());
 
         mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}/market", SYMBOL))
                .andExpect(status().isOk());
@@ -74,20 +81,20 @@ class MarketControllerTest {
 
     @Test
     void getMarket_waypointHasNoMarketplace_propagatesNotFound() throws Exception {
-        when(marketService.get(any(), any(), anyBoolean()))
+        when(marketService.get(any(), any(), anyBoolean(), any()))
                 .thenThrow(new ApiException(HttpStatus.NOT_FOUND, "no marketplace"));
 
         mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}/market", SYMBOL)
-                        .header("Authorization", TestClerk.bearer()))
+                        .header("Authorization", OPERATOR_BEARER))
                .andExpect(status().isNotFound());
     }
 
     @Test
     void refreshMarket_returns200WithUpdatedData() throws Exception {
-        when(marketService.refresh(SYMBOL, OPERATOR)).thenReturn(marketJson());
+        when(marketService.refresh(SYMBOL, OPERATOR, OPERATOR_BEARER)).thenReturn(marketJson());
 
         mockMvc.perform(post("/api/navigation/v1/waypoints/{symbol}/market/refresh", SYMBOL)
-                        .header("Authorization", TestClerk.bearer()))
+                        .header("Authorization", OPERATOR_BEARER))
                .andExpect(status().isOk())
                .andExpect(jsonPath("$.symbol").value(SYMBOL));
     }

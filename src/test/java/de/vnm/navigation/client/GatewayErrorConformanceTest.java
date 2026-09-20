@@ -40,6 +40,8 @@ class GatewayErrorConformanceTest {
 
     private static final String BASE = "https://gateway.test/proxy";
     private static final String URL = BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29";
+    /** The contract is about statuses, not credentials; a live fetch always carries one. */
+    private static final String CALLER_SESSION = "Bearer eyJhbGciOiJSUzI1NiJ9.e30.c2ln";
 
     @TestFactory
     List<DynamicTest> answersEveryGatewayConditionTheContractNames() throws IOException {
@@ -66,7 +68,7 @@ class GatewayErrorConformanceTest {
         respondWith(server, testCase.path("gateway"));
 
         JsonNode expect = testCase.path("expect");
-        assertThatThrownBy(() -> client.fetchWaypoint("X1-FQ86", "X1-FQ86-B29"))
+        assertThatThrownBy(() -> client.fetchWaypoint("X1-FQ86", "X1-FQ86-B29", CALLER_SESSION))
                 .isInstanceOf(ApiException.class)
                 .satisfies(thrown -> assertRelayed((ApiException) thrown, expect));
         server.verify();

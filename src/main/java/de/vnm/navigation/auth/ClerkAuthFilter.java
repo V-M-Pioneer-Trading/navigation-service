@@ -19,6 +19,11 @@ import java.io.IOException;
  *   <li>{@code GET}: public. A verified session, if one is presented, is handed to the
  *       controller as the {@link #SESSION_ATTRIBUTE} request attribute so the service can
  *       decide whether a live fetch is allowed; no header at all means anonymous.</li>
+ *   <li>Alongside it, the raw {@code Authorization} header is republished as
+ *       {@link #CALLER_AUTHORIZATION_ATTRIBUTE} so it can be forwarded verbatim to
+ *       st-gateway, which derives the queue lane from the identity it verifies for itself
+ *       (auth-design.md decision 2). Set here, next to the verification that earned it,
+ *       and only on the success path: an unverified credential is never relayed.</li>
  *   <li>Anything else (the {@code POST …/refresh} routes): requires a verified session
  *       carrying {@link Scopes#UNIVERSE_REFRESH}.</li>
  *   <li>A presented token that does not verify is a 401 on every method — a bad
@@ -33,6 +38,18 @@ import java.io.IOException;
 public final class ClerkAuthFilter extends OncePerRequestFilter {
 
     public static final String SESSION_ATTRIBUTE = "de.vnm.navigation.auth.Session";
+
+    /**
+     * The inbound {@code Authorization} header, byte for byte, published only when the
+     * session it carries verified. A plain {@code String} rather than a richer type
+     * because {@code client} may not import from {@code auth}, and because the thing
+     * being forwarded really is just those bytes.
+     *
+     * <p>It is the Clerk session and nothing else. No SpaceTraders game token exists in
+     * this service to confuse it with (auth-design.md decision 5).
+     */
+    public static final String CALLER_AUTHORIZATION_ATTRIBUTE =
+            "de.vnm.navigation.auth.CallerAuthorization";
 
     static final String GUARDED_PREFIX = "/api/navigation/v1/";
 
@@ -58,7 +75,8 @@ public final class ClerkAuthFilter extends OncePerRequestFilter {
                 && !HttpMethod.HEAD.matches(request.getMethod())
                 && !HttpMethod.OPTIONS.matches(request.getMethod());
 
-        String token = bearerFrom(request.getHeader(HttpHeaders.AUTHORIZATION));
+        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String token = bearerFrom(authorization);
         if (token == null) {
             if (mutating) {
                 reject(response, HttpServletResponse.SC_UNAUTHORIZED, MISSING_TOKEN);
@@ -82,6 +100,10 @@ public final class ClerkAuthFilter extends OncePerRequestFilter {
         }
 
         request.setAttribute(SESSION_ATTRIBUTE, session);
+        // Verbatim, including the scheme: st-gateway re-verifies the same bytes, so any
+        // reconstruction here would only be a chance to get it wrong. Set in the same
+        // breath as the session so the two can never disagree about who is calling.
+        request.setAttribute(CALLER_AUTHORIZATION_ATTRIBUTE, authorization);
         chain.doFilter(request, response);
     }
 

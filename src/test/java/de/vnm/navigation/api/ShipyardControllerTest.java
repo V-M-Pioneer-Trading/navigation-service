@@ -35,6 +35,13 @@ class ShipyardControllerTest {
     /** What TestClerk.bearer() verifies to, so mocks can match on the exact session. */
     private static final Session OPERATOR = TestClerk.OPERATOR;
 
+    /**
+     * One fixed token for the whole class. The controller forwards the caller's inbound
+     * header onward verbatim, so a stub matching on these exact bytes is itself the proof
+     * that the header reaches the service unchanged.
+     */
+    private static final String OPERATOR_BEARER = TestClerk.bearer();
+
     @DynamicPropertySource
     static void trustAnchor(DynamicPropertyRegistry registry) {
         registry.add("clerk.jwt-key", TestClerk::publicKeyPem);
@@ -44,29 +51,29 @@ class ShipyardControllerTest {
 
     @Test
     void getShipyard_returns200WithData() throws Exception {
-        when(shipyardService.get(SYMBOL, OPERATOR, false)).thenReturn(shipyardJson());
+        when(shipyardService.get(SYMBOL, OPERATOR, false, OPERATOR_BEARER)).thenReturn(shipyardJson());
 
         mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}/shipyard", SYMBOL)
-                        .header("Authorization", TestClerk.bearer()))
+                        .header("Authorization", OPERATOR_BEARER))
                .andExpect(status().isOk())
                .andExpect(jsonPath("$.symbol").value(SYMBOL));
     }
 
     @Test
     void getShipyard_forceRefresh_passedToService() throws Exception {
-        when(shipyardService.get(SYMBOL, OPERATOR, true)).thenReturn(shipyardJson());
+        when(shipyardService.get(SYMBOL, OPERATOR, true, OPERATOR_BEARER)).thenReturn(shipyardJson());
 
         mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}/shipyard", SYMBOL)
                         .param("forceRefresh", "true")
-                        .header("Authorization", TestClerk.bearer()))
+                        .header("Authorization", OPERATOR_BEARER))
                .andExpect(status().isOk());
 
-        verify(shipyardService).get(SYMBOL, OPERATOR, true);
+        verify(shipyardService).get(SYMBOL, OPERATOR, true, OPERATOR_BEARER);
     }
 
     @Test
     void getShipyard_noToken_stillReachesTheService() throws Exception {
-        when(shipyardService.get(SYMBOL, null, false)).thenReturn(shipyardJson());
+        when(shipyardService.get(SYMBOL, null, false, null)).thenReturn(shipyardJson());
 
         mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}/shipyard", SYMBOL))
                .andExpect(status().isOk());
@@ -74,20 +81,20 @@ class ShipyardControllerTest {
 
     @Test
     void getShipyard_waypointHasNoShipyard_propagatesNotFound() throws Exception {
-        when(shipyardService.get(any(), any(), anyBoolean()))
+        when(shipyardService.get(any(), any(), anyBoolean(), any()))
                 .thenThrow(new ApiException(HttpStatus.NOT_FOUND, "no shipyard"));
 
         mockMvc.perform(get("/api/navigation/v1/waypoints/{symbol}/shipyard", SYMBOL)
-                        .header("Authorization", TestClerk.bearer()))
+                        .header("Authorization", OPERATOR_BEARER))
                .andExpect(status().isNotFound());
     }
 
     @Test
     void refreshShipyard_returns200WithUpdatedData() throws Exception {
-        when(shipyardService.refresh(SYMBOL, OPERATOR)).thenReturn(shipyardJson());
+        when(shipyardService.refresh(SYMBOL, OPERATOR, OPERATOR_BEARER)).thenReturn(shipyardJson());
 
         mockMvc.perform(post("/api/navigation/v1/waypoints/{symbol}/shipyard/refresh", SYMBOL)
-                        .header("Authorization", TestClerk.bearer()))
+                        .header("Authorization", OPERATOR_BEARER))
                .andExpect(status().isOk())
                .andExpect(jsonPath("$.symbol").value(SYMBOL));
     }

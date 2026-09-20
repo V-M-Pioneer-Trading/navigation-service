@@ -34,7 +34,9 @@ import java.util.Optional;
  * <h3>Who may fetch live</h3>
  * A cache hit needs no identity at all, which is what makes reads public; a live fetch
  * requires a verified Clerk session (auth-design.md decisions 2 and 3). The upstream
- * credential is st-gateway's concern, not this service's (decision 5).
+ * game credential is st-gateway's concern, not this service's (decision 5) — but the
+ * caller's own session is forwarded to it verbatim, which is how the gateway knows to
+ * put an operator's lookup in the interactive lane (decision 2).
  */
 @Service
 public class WaypointService {
@@ -59,11 +61,16 @@ public class WaypointService {
     /**
      * Return a waypoint by symbol, fetching from SpaceTraders on cache miss.
      *
-     * @param symbol       waypoint symbol, e.g. {@code X1-FQ86-B29}
-     * @param session      the verified caller, or {@code null} for an anonymous, cache-only read
-     * @param forceRefresh when {@code true}, bypass the cache and re-fetch
+     * @param symbol              waypoint symbol, e.g. {@code X1-FQ86-B29}
+     * @param session             the verified caller, or {@code null} for an anonymous,
+     *                            cache-only read
+     * @param forceRefresh        when {@code true}, bypass the cache and re-fetch
+     * @param callerAuthorization the caller's inbound {@code Authorization} header, forwarded
+     *                            unchanged to st-gateway so it can assign the interactive
+     *                            lane; {@code null} when the caller presented none
      */
-    public JsonNode getWaypoint(String symbol, Session session, boolean forceRefresh) {
+    public JsonNode getWaypoint(String symbol, Session session, boolean forceRefresh,
+                                String callerAuthorization) {
         String systemSymbol = Symbols.systemOf(symbol);
         String context = "waypoint " + symbol;
 
@@ -77,7 +84,7 @@ public class WaypointService {
 
         LiveFetch.requireSession(session, context);
         log.debug("Cache miss for {} — fetching from SpaceTraders", context);
-        JsonNode data = spaceTradersClient.fetchWaypoint(systemSymbol, symbol);
+        JsonNode data = spaceTradersClient.fetchWaypoint(systemSymbol, symbol, callerAuthorization);
         repository.upsert(toEntity(data));
         return data;
     }
@@ -88,10 +95,13 @@ public class WaypointService {
      * <p>Transactional: the refresh replaces the system's rows, and a failure part-way
      * through must leave the previous listing intact rather than a half-written one.
      *
-     * @param forceRefresh when {@code true}, bypass the cache and re-walk the system
+     * @param forceRefresh        when {@code true}, bypass the cache and re-walk the system
+     * @param callerAuthorization the caller's inbound {@code Authorization} header, forwarded
+     *                            unchanged on every page of the walk
      */
     @Transactional
-    public List<JsonNode> getWaypointsBySystem(String systemSymbol, Session session, boolean forceRefresh) {
+    public List<JsonNode> getWaypointsBySystem(String systemSymbol, Session session,
+                                               boolean forceRefresh, String callerAuthorization) {
         Symbols.requireSystem(systemSymbol);
         String context = "system " + systemSymbol;
 
@@ -105,7 +115,7 @@ public class WaypointService {
 
         LiveFetch.requireSession(session, context);
         log.debug("Cache miss for {} — fetching all waypoints from SpaceTraders", context);
-        List<JsonNode> fetched = spaceTradersClient.fetchWaypointsBySystem(systemSymbol);
+        List<JsonNode> fetched = spaceTradersClient.fetchWaypointsBySystem(systemSymbol, callerAuthorization);
 
         // Map before writing: an unusable waypoint in the response aborts the refresh
         // while the previously cached listing is still on disk.
@@ -118,8 +128,8 @@ public class WaypointService {
     }
 
     /** Force-refresh a single waypoint from SpaceTraders and update the cache. */
-    public JsonNode refreshWaypoint(String symbol, Session session) {
-        return getWaypoint(symbol, session, true);
+    public JsonNode refreshWaypoint(String symbol, Session session, String callerAuthorization) {
+        return getWaypoint(symbol, session, true, callerAuthorization);
     }
 
     /**
@@ -129,8 +139,9 @@ public class WaypointService {
      * carry the annotation itself, because a self-call would not go through the proxy.
      */
     @Transactional
-    public List<JsonNode> refreshWaypointsBySystem(String systemSymbol, Session session) {
-        return getWaypointsBySystem(systemSymbol, session, true);
+    public List<JsonNode> refreshWaypointsBySystem(String systemSymbol, Session session,
+                                                   String callerAuthorization) {
+        return getWaypointsBySystem(systemSymbol, session, true, callerAuthorization);
     }
 
     private WaypointEntity toEntity(JsonNode node) {

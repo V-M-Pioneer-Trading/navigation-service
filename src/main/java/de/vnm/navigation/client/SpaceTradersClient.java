@@ -6,6 +6,7 @@ import de.vnm.navigation.exception.ApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
@@ -24,9 +25,20 @@ import java.util.Map;
  * HTTP client for the SpaceTraders v2 API, routed through st-gateway's shared
  * rate budget (meta#1/meta#7) rather than hitting SpaceTraders directly.
  *
- * <p>Requests carry no credential and no priority hint: st-gateway injects the agent
- * token (auth-design.md decision 5) and derives priority from the identity it verifies
- * itself (decision 2). This service holds nothing a caller could spoof.
+ * <p>Exactly one credential goes out, and only when the caller presented one: the
+ * caller's verified Clerk session, relayed byte for byte on {@code Authorization}.
+ * st-gateway re-verifies it and derives the queue lane from it (auth-design.md decision
+ * 2), so an operator's map and market lookups share the interactive lane with the rest of
+ * the dashboard instead of queueing behind autopilot traffic. Forwarding nothing —
+ * which this client used to do — is the one way to break that silently: the gateway sees
+ * an unidentified call and puts it in {@code background}, with no error anywhere.
+ *
+ * <p>Two things are still never sent, and re-adding either would be a regression. The
+ * SpaceTraders game token: st-gateway injects it and no copy exists in this service
+ * (decision 5). And a priority hint: {@code X-Priority} was deleted because a
+ * caller-declared class means anything can promote itself (decision 2). An anonymous
+ * caller has no session to forward, so its call goes out bare and lands in
+ * {@code background} — which is the correct lane for it.
  *
  * <p>Every failure leaves as an {@link ApiException}, and the status it carries is
  * st-gateway's own wherever the gateway answered at all — 4xx and 5xx alike, with the
@@ -88,24 +100,27 @@ public class SpaceTradersClient {
     /**
      * Fetch a single waypoint.
      *
-     * @param systemSymbol   e.g. {@code X1-FQ86}
-     * @param waypointSymbol e.g. {@code X1-FQ86-B29}
+     * @param systemSymbol         e.g. {@code X1-FQ86}
+     * @param waypointSymbol       e.g. {@code X1-FQ86-B29}
+     * @param callerAuthorization  the caller's inbound {@code Authorization} header, to be
+     *                             forwarded unchanged, or {@code null} for an anonymous
+     *                             caller with nothing to forward
      */
-    public JsonNode fetchWaypoint(String systemSymbol, String waypointSymbol) {
+    public JsonNode fetchWaypoint(String systemSymbol, String waypointSymbol, String callerAuthorization) {
         return fetchOne("/systems/{system}/waypoints/{waypoint}",
-                "waypoint " + waypointSymbol, systemSymbol, waypointSymbol);
+                "waypoint " + waypointSymbol, callerAuthorization, systemSymbol, waypointSymbol);
     }
 
     /** Fetch market data (imports/exports/prices) for a waypoint. */
-    public JsonNode fetchMarket(String systemSymbol, String waypointSymbol) {
+    public JsonNode fetchMarket(String systemSymbol, String waypointSymbol, String callerAuthorization) {
         return fetchOne("/systems/{system}/waypoints/{waypoint}/market",
-                "market at " + waypointSymbol, systemSymbol, waypointSymbol);
+                "market at " + waypointSymbol, callerAuthorization, systemSymbol, waypointSymbol);
     }
 
     /** Fetch shipyard data (ships for sale) for a waypoint. */
-    public JsonNode fetchShipyard(String systemSymbol, String waypointSymbol) {
+    public JsonNode fetchShipyard(String systemSymbol, String waypointSymbol, String callerAuthorization) {
         return fetchOne("/systems/{system}/waypoints/{waypoint}/shipyard",
-                "shipyard at " + waypointSymbol, systemSymbol, waypointSymbol);
+                "shipyard at " + waypointSymbol, callerAuthorization, systemSymbol, waypointSymbol);
     }
 
     /**
@@ -116,7 +131,7 @@ public class SpaceTradersClient {
      * is a short page; {@code meta.total}, when present, only lets the walk stop one request
      * earlier.
      */
-    public List<JsonNode> fetchWaypointsBySystem(String systemSymbol) {
+    public List<JsonNode> fetchWaypointsBySystem(String systemSymbol, String callerAuthorization) {
         String context = "system " + systemSymbol;
         log.debug("Fetching all waypoints for {}", context);
 
@@ -131,7 +146,7 @@ public class SpaceTradersClient {
                                .queryParam("page", currentPage)
                                .queryParam("limit", PAGE_LIMIT)
                                .build(systemSymbol)),
-                    context);
+                    context, callerAuthorization);
 
             JsonNode root = readTree(body, context);
             JsonNode data = root.path("data");
@@ -158,13 +173,19 @@ public class SpaceTradersClient {
 
     // ── shared request plumbing ──────────────────────────────────────────────
 
-    private JsonNode fetchOne(String path, String context, Object... uriVars) {
+    private JsonNode fetchOne(String path, String context, String callerAuthorization, Object... uriVars) {
         log.debug("Fetching {} from SpaceTraders", context);
-        String body = exchange(restClient.get().uri(path, uriVars), context);
+        String body = exchange(restClient.get().uri(path, uriVars), context, callerAuthorization);
         return requireData(body, context);
     }
 
-    private String exchange(RestClient.RequestHeadersSpec<?> spec, String context) {
+    private String exchange(RestClient.RequestHeadersSpec<?> spec, String context, String callerAuthorization) {
+        // The whole of the credential policy, in one place. Present means "the filter
+        // verified this session"; absent means an anonymous cache-only caller, and there
+        // is simply nothing to send — never a substitute, never a hint.
+        if (callerAuthorization != null && !callerAuthorization.isBlank()) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, callerAuthorization);
+        }
         try {
             return spec.retrieve()
                     .onStatus(HttpStatusCode::isError, (req, res) -> {

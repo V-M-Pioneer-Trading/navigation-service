@@ -56,21 +56,30 @@ class ClerkAuthFilterTest {
 
     @Test
     void read_withoutAnyHeader_isAnonymous() throws Exception {
-        when(waypointService.getWaypoint(eq(SYMBOL), isNull(), anyBoolean())).thenReturn(waypoint());
+        when(waypointService.getWaypoint(eq(SYMBOL), isNull(), anyBoolean(), isNull())).thenReturn(waypoint());
 
         mockMvc.perform(get(READ)).andExpect(status().isOk());
 
-        verify(waypointService).getWaypoint(SYMBOL, null, false);
+        verify(waypointService).getWaypoint(SYMBOL, null, false, null);
     }
 
+    /**
+     * The filter publishes two things about a verified caller: the {@link Session} the
+     * service reasons about, and the raw header the client forwards to st-gateway. The
+     * second is asserted byte-for-byte: the contract is relay, not re-encode. This test
+     * alone would not catch a reconstruction, because it sends the canonical spelling a
+     * reconstruction would reproduce; {@link #bearerSchemeIsCaseInsensitive()} is the one
+     * that does.
+     */
     @Test
-    void read_withValidSession_handsTheSessionToTheController() throws Exception {
-        when(waypointService.getWaypoint(eq(SYMBOL), any(Session.class), anyBoolean())).thenReturn(waypoint());
+    void read_withValidSession_handsTheSessionAndTheRawHeaderToTheController() throws Exception {
+        String bearer = TestClerk.bearer("fleet:control");
+        when(waypointService.getWaypoint(eq(SYMBOL), any(Session.class), anyBoolean(), any())).thenReturn(waypoint());
 
-        mockMvc.perform(get(READ).header("Authorization", TestClerk.bearer("fleet:control")))
+        mockMvc.perform(get(READ).header("Authorization", bearer))
                .andExpect(status().isOk());
 
-        verify(waypointService).getWaypoint(SYMBOL, new Session(TestClerk.ACTOR, java.util.Set.of("fleet:control")), false);
+        verify(waypointService).getWaypoint(SYMBOL, new Session(TestClerk.ACTOR, java.util.Set.of("fleet:control")), false, bearer);
     }
 
     /** A bad credential is never quietly downgraded to anonymous. */
@@ -91,15 +100,20 @@ class ClerkAuthFilterTest {
                .andExpect(jsonPath("$.error.message").value(ClerkAuthFilter.INVALID_SESSION));
     }
 
-    /** A non-Bearer Authorization header reads as no token — on a GET that is anonymous. */
+    /**
+     * A non-Bearer Authorization header reads as no token — on a GET that is anonymous.
+     * Nothing is forwarded upstream either: only a header this filter actually verified is
+     * republished for relay, so a stray {@code Basic} credential is never handed to
+     * st-gateway on the caller's behalf.
+     */
     @Test
-    void read_withNonBearerAuthorization_isAnonymous() throws Exception {
-        when(waypointService.getWaypoint(eq(SYMBOL), isNull(), anyBoolean())).thenReturn(waypoint());
+    void read_withNonBearerAuthorization_isAnonymousAndForwardsNothing() throws Exception {
+        when(waypointService.getWaypoint(eq(SYMBOL), isNull(), anyBoolean(), isNull())).thenReturn(waypoint());
 
         mockMvc.perform(get(READ).header("Authorization", "Basic dXNlcjpwYXNz"))
                .andExpect(status().isOk());
 
-        verify(waypointService).getWaypoint(SYMBOL, null, false);
+        verify(waypointService).getWaypoint(SYMBOL, null, false, null);
     }
 
     // ── refresh: universe:refresh required ─────────────────────────────────────────────
@@ -152,22 +166,30 @@ class ClerkAuthFilterTest {
 
     @Test
     void refresh_withTheScope_reachesTheController() throws Exception {
-        when(waypointService.refreshWaypoint(eq(SYMBOL), any(Session.class))).thenReturn(waypoint());
+        String bearer = TestClerk.bearer();
+        when(waypointService.refreshWaypoint(eq(SYMBOL), any(Session.class), any())).thenReturn(waypoint());
 
-        mockMvc.perform(post(REFRESH).header("Authorization", TestClerk.bearer()))
+        mockMvc.perform(post(REFRESH).header("Authorization", bearer))
                .andExpect(status().isOk())
                .andExpect(jsonPath("$.symbol").value(SYMBOL));
 
-        verify(waypointService).refreshWaypoint(SYMBOL, TestClerk.OPERATOR);
+        verify(waypointService).refreshWaypoint(SYMBOL, TestClerk.OPERATOR, bearer);
     }
 
+    /**
+     * Also the test that pins "forwarded byte for byte, never reconstructed": a filter
+     * that rebuilt the header as {@code "Bearer " + token} would hand the service the
+     * canonical spelling, not the lowercase one the caller sent.
+     */
     @Test
     void bearerSchemeIsCaseInsensitive() throws Exception {
-        when(waypointService.refreshWaypoint(eq(SYMBOL), any(Session.class))).thenReturn(waypoint());
+        when(waypointService.refreshWaypoint(eq(SYMBOL), any(Session.class), any())).thenReturn(waypoint());
 
         String lower = TestClerk.bearer().replaceFirst("^Bearer", "bearer");
         mockMvc.perform(post(REFRESH).header("Authorization", lower))
                .andExpect(status().isOk());
+
+        verify(waypointService).refreshWaypoint(SYMBOL, TestClerk.OPERATOR, lower);
     }
 
     // ── outside the guarded prefix ─────────────────────────────────────────────────────

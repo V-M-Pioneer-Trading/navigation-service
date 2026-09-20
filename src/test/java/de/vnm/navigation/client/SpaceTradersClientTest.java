@@ -6,6 +6,7 @@ import de.vnm.navigation.exception.ApiException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -18,6 +19,7 @@ import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.headerDoesNotExist;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
@@ -33,6 +35,15 @@ class SpaceTradersClientTest {
     private static final String BASE = "https://gateway.test/proxy";
     private static final String SYSTEM = "X1-FQ86";
     private static final String WAYPOINT = "X1-FQ86-B29";
+
+    /**
+     * A caller's inbound {@code Authorization} header, shaped like the real thing. Its
+     * exact bytes are the assertion: st-gateway re-verifies this signature itself, so
+     * anything less than a byte-for-byte relay would fail verification there and silently
+     * demote the call to the background lane.
+     */
+    private static final String CALLER_SESSION =
+            "Bearer eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyXzJUZXN0T3BlcmF0b3IifQ.c2lnbmF0dXJl";
 
     private MockRestServiceServer server;
     private SpaceTradersClient client;
@@ -57,18 +68,68 @@ class SpaceTradersClientTest {
 
     // ── request shape ────────────────────────────────────────────────────────
 
+    /**
+     * Regression: this client used to send no {@code Authorization} at all, and a test
+     * here asserted exactly that. st-gateway assigns the interactive lane from the Clerk
+     * session it verifies for itself (auth-design.md decision 2), so a backend that
+     * verifies the session and then forwards nothing degrades every one of its calls to
+     * {@code background} — with no error anywhere. An operator's map, market and shipyard
+     * lookups queued behind autopilot traffic because of it.
+     *
+     * <p>Byte-for-byte, scheme included: st-gateway checks this signature itself, so any
+     * re-encoding here would fail verification there and land back in {@code background}.
+     */
     @Test
-    void fetchWaypoint_sendsNoCredentialAndNoPriorityHint() {
+    void fetchWaypoint_forwardsTheCallersClerkSessionUnchanged() {
         server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
-              .andExpect(headerDoesNotExist("Authorization"))
+              .andExpect(header(HttpHeaders.AUTHORIZATION, CALLER_SESSION))
+              // Still true, and still worth guarding: the game token is st-gateway's alone
+              // (decision 5), and a caller-declared priority class was deleted because
+              // anything could promote itself with it (decision 2).
+              .andExpect(headerDoesNotExist("X-SpaceTraders-Token"))
               .andExpect(headerDoesNotExist("X-Priority"))
               .andRespond(withSuccess("""
                       {"data":{"symbol":"X1-FQ86-B29","type":"ASTEROID"}}""",
                       MediaType.APPLICATION_JSON));
 
-        JsonNode result = client.fetchWaypoint(SYSTEM, WAYPOINT);
+        JsonNode result = client.fetchWaypoint(SYSTEM, WAYPOINT, CALLER_SESSION);
 
         assertThat(result.path("symbol").asText()).isEqualTo(WAYPOINT);
+    }
+
+    /**
+     * Anonymous cache-only reads are a supported surface (auth-design.md decision 3), and
+     * a caller who presented no credential has none to forward. Nothing is invented to
+     * stand in for it: the call goes out bare and st-gateway puts it in {@code background},
+     * which is the correct lane for a visitor.
+     */
+    @Test
+    void fetchWaypoint_anonymousCaller_sendsNoAuthorizationAtAll() {
+        server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
+              .andExpect(headerDoesNotExist(HttpHeaders.AUTHORIZATION))
+              .andExpect(headerDoesNotExist("X-SpaceTraders-Token"))
+              .andExpect(headerDoesNotExist("X-Priority"))
+              .andRespond(withSuccess("""
+                      {"data":{"symbol":"X1-FQ86-B29","type":"ASTEROID"}}""",
+                      MediaType.APPLICATION_JSON));
+
+        JsonNode result = client.fetchWaypoint(SYSTEM, WAYPOINT, null);
+
+        assertThat(result.path("symbol").asText()).isEqualTo(WAYPOINT);
+    }
+
+    /**
+     * The pager builds its own request spec rather than going through {@code fetchOne}, so
+     * it is the one path where the session could be dropped without any single-resource
+     * test noticing — and a system walk is several upstream calls, the most expensive
+     * thing to have sitting in the wrong lane.
+     */
+    @Test
+    void fetchWaypointsBySystem_forwardsTheSessionOnEveryPage() {
+        expectPageWithSession(1, page(20, 23));
+        expectPageWithSession(2, page(3, 23));
+
+        assertThat(client.fetchWaypointsBySystem(SYSTEM, CALLER_SESSION)).hasSize(23);
     }
 
     @Test
@@ -78,7 +139,7 @@ class SpaceTradersClientTest {
                       {"data":{"symbol":"X1-FQ86-B29","shipTypes":[]}}""",
                       MediaType.APPLICATION_JSON));
 
-        JsonNode result = client.fetchShipyard(SYSTEM, WAYPOINT);
+        JsonNode result = client.fetchShipyard(SYSTEM, WAYPOINT, CALLER_SESSION);
 
         assertThat(result.has("shipTypes")).isTrue();
     }
@@ -90,7 +151,7 @@ class SpaceTradersClientTest {
         server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
               .andRespond(withStatus(HttpStatus.NOT_FOUND));
 
-        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT))
+        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT, CALLER_SESSION))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
     }
@@ -109,7 +170,7 @@ class SpaceTradersClientTest {
                       .body("""
                               {"error":{"message":"SpaceTraders credential not configured"}}"""));
 
-        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT))
+        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT, CALLER_SESSION))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE))
                 .hasMessage("SpaceTraders credential not configured");
@@ -129,7 +190,7 @@ class SpaceTradersClientTest {
                   throw new IOException("Connection refused");
               });
 
-        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT))
+        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT, CALLER_SESSION))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.GATEWAY_TIMEOUT))
                 .hasMessageContaining("did not answer");
@@ -148,7 +209,7 @@ class SpaceTradersClientTest {
                       {"error":{"message":"something else entirely"}}""",
                       MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT))
+        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT, CALLER_SESSION))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY))
                 .hasMessageContaining("no data payload");
@@ -159,7 +220,7 @@ class SpaceTradersClientTest {
         server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints/X1-FQ86-B29"))
               .andRespond(withSuccess("<html>gateway error</html>", MediaType.TEXT_HTML));
 
-        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT))
+        assertThatThrownBy(() -> client.fetchWaypoint(SYSTEM, WAYPOINT, CALLER_SESSION))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY));
     }
@@ -171,7 +232,7 @@ class SpaceTradersClientTest {
         expectPage(1, page(20, 23));
         expectPage(2, page(3, 23));
 
-        List<JsonNode> all = client.fetchWaypointsBySystem(SYSTEM);
+        List<JsonNode> all = client.fetchWaypointsBySystem(SYSTEM, CALLER_SESSION);
 
         assertThat(all).hasSize(23);
     }
@@ -180,7 +241,7 @@ class SpaceTradersClientTest {
     void fetchWaypointsBySystem_singleShortPage_stopsImmediately() {
         expectPage(1, page(4, 4));
 
-        assertThat(client.fetchWaypointsBySystem(SYSTEM)).hasSize(4);
+        assertThat(client.fetchWaypointsBySystem(SYSTEM, CALLER_SESSION)).hasSize(4);
     }
 
     /**
@@ -193,7 +254,7 @@ class SpaceTradersClientTest {
         expectPage(1, pageWithoutMeta(20));
         expectPage(2, pageWithoutMeta(3));
 
-        List<JsonNode> all = client.fetchWaypointsBySystem(SYSTEM);
+        List<JsonNode> all = client.fetchWaypointsBySystem(SYSTEM, CALLER_SESSION);
 
         assertThat(all).hasSize(23);
     }
@@ -203,7 +264,7 @@ class SpaceTradersClientTest {
         expectPage(1, """
                 {"data":{"symbol":"X1-FQ86-B29"},"meta":{"total":1}}""");
 
-        assertThatThrownBy(() -> client.fetchWaypointsBySystem(SYSTEM))
+        assertThatThrownBy(() -> client.fetchWaypointsBySystem(SYSTEM, CALLER_SESSION))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY));
     }
@@ -212,6 +273,14 @@ class SpaceTradersClientTest {
 
     private void expectPage(int page, String body) {
         server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints?page=" + page + "&limit=20"))
+              .andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+    }
+
+    private void expectPageWithSession(int page, String body) {
+        server.expect(requestTo(BASE + "/systems/X1-FQ86/waypoints?page=" + page + "&limit=20"))
+              .andExpect(header(HttpHeaders.AUTHORIZATION, CALLER_SESSION))
+              .andExpect(headerDoesNotExist("X-SpaceTraders-Token"))
+              .andExpect(headerDoesNotExist("X-Priority"))
               .andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
     }
 

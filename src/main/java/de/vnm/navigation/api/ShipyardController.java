@@ -53,9 +53,12 @@ public class ShipyardController {
             @Parameter(description = "Bypass cache and re-fetch from SpaceTraders")
             @RequestParam(defaultValue = "false") boolean forceRefresh,
             @Parameter(hidden = true)
-            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session) {
+            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session,
+            @Parameter(hidden = true)
+            @RequestAttribute(value = ClerkAuthFilter.CALLER_AUTHORIZATION_ATTRIBUTE, required = false)
+            String callerAuthorization) {
 
-        return ResponseEntity.ok(shipyardService.get(symbol, session, forceRefresh));
+        return ResponseEntity.ok(shipyardService.get(symbol, session, forceRefresh, callerAuthorization));
     }
 
     @Operation(
@@ -81,8 +84,11 @@ public class ShipyardController {
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")
             @PathVariable String symbol,
             @Parameter(hidden = true)
-            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session) {
+            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session,
+            @Parameter(hidden = true)
+            @RequestAttribute(value = ClerkAuthFilter.CALLER_AUTHORIZATION_ATTRIBUTE, required = false)
+            String callerAuthorization) {
 
-        return ResponseEntity.ok(shipyardService.refresh(symbol, session));
+        return ResponseEntity.ok(shipyardService.refresh(symbol, session, callerAuthorization));
     }
 }

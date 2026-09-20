@@ -20,6 +20,11 @@ import java.util.Optional;
  *
  * <p>The sequence is: validate the symbol, serve a fresh cached row if one exists and the
  * caller did not ask for a refresh, otherwise require a signed-in caller, fetch, store, return.
+ *
+ * <p>{@code callerAuthorization} is threaded through explicitly, next to {@code session}
+ * and {@code forceRefresh}, rather than being read from ambient request state. It is a
+ * plain {@code String} because {@code client} may not import from {@code auth} — and
+ * because what st-gateway needs is literally the inbound header's bytes.
  */
 public abstract class CachedResourceService {
 
@@ -44,14 +49,20 @@ public abstract class CachedResourceService {
     }
 
     /** Fetch this resource for one waypoint from SpaceTraders. */
-    protected abstract JsonNode fetchUpstream(String systemSymbol, String waypointSymbol);
+    protected abstract JsonNode fetchUpstream(String systemSymbol, String waypointSymbol,
+                                              String callerAuthorization);
 
     /**
-     * @param waypointSymbol waypoint the resource belongs to, e.g. {@code X1-FQ86-B29}
-     * @param session        the verified caller, or {@code null} for an anonymous, cache-only read
-     * @param forceRefresh   when {@code true}, skip the cache and re-fetch
+     * @param waypointSymbol      waypoint the resource belongs to, e.g. {@code X1-FQ86-B29}
+     * @param session             the verified caller, or {@code null} for an anonymous,
+     *                            cache-only read
+     * @param forceRefresh        when {@code true}, skip the cache and re-fetch
+     * @param callerAuthorization the caller's inbound {@code Authorization} header, forwarded
+     *                            unchanged to st-gateway so it can assign the interactive
+     *                            lane; {@code null} when the caller presented none
      */
-    public JsonNode get(String waypointSymbol, Session session, boolean forceRefresh) {
+    public JsonNode get(String waypointSymbol, Session session, boolean forceRefresh,
+                        String callerAuthorization) {
         String systemSymbol = Symbols.systemOf(waypointSymbol);
         String context = label + " " + waypointSymbol;
 
@@ -65,15 +76,15 @@ public abstract class CachedResourceService {
 
         LiveFetch.requireSession(session, context);
         log.debug("Cache miss for {} — fetching from SpaceTraders", context);
-        JsonNode data = fetchUpstream(systemSymbol, waypointSymbol);
+        JsonNode data = fetchUpstream(systemSymbol, waypointSymbol, callerAuthorization);
         repository.upsert(new LocationDataEntity(
                 waypointSymbol, systemSymbol, json.write(data, context), Instant.now().toString()));
         return data;
     }
 
     /** Force-fetch from SpaceTraders and update the cache. */
-    public JsonNode refresh(String waypointSymbol, Session session) {
-        return get(waypointSymbol, session, true);
+    public JsonNode refresh(String waypointSymbol, Session session, String callerAuthorization) {
+        return get(waypointSymbol, session, true, callerAuthorization);
     }
 
     private boolean isFresh(LocationDataEntity entity) {

@@ -36,6 +36,8 @@ class MarketServiceTest {
     private static final Session OPERATOR = new Session("user_test", java.util.Set.of("universe:refresh"));
     private static final String SYMBOL = "X1-FQ86-B29";
     private static final String SYSTEM = "X1-FQ86";
+    /** What the controller hands down: the caller's inbound header, forwarded verbatim. */
+    private static final String SESSION_HEADER = "Bearer eyJhbGciOiJSUzI1NiJ9.e30.c2ln";
     private static final Duration TTL = Duration.ofSeconds(60);
 
     @BeforeEach
@@ -47,7 +49,7 @@ class MarketServiceTest {
     void get_freshCache_returnsDataWithoutCallingUpstream() {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(marketEntity(secondsAgo(10))));
 
-        JsonNode result = service.get(SYMBOL, OPERATOR, false);
+        JsonNode result = service.get(SYMBOL, OPERATOR, false, SESSION_HEADER);
 
         assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
         verifyNoInteractions(spaceTradersClient);
@@ -56,13 +58,13 @@ class MarketServiceTest {
     @Test
     void get_staleCache_refetchesFromUpstream() throws Exception {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(marketEntity(secondsAgo(120))));
-        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL))
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, SESSION_HEADER))
                 .thenReturn(upstreamMarket());
 
-        JsonNode result = service.get(SYMBOL, OPERATOR, false);
+        JsonNode result = service.get(SYMBOL, OPERATOR, false, SESSION_HEADER);
 
         assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
-        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL);
+        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, SESSION_HEADER);
     }
 
     /**
@@ -75,22 +77,22 @@ class MarketServiceTest {
     @Test
     void get_unreadableFetchedAt_isTreatedAsStaleInsteadOfFailing() throws Exception {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(marketEntity("not-a-timestamp")));
-        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL))
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, SESSION_HEADER))
                 .thenReturn(upstreamMarket());
 
-        JsonNode result = service.get(SYMBOL, OPERATOR, false);
+        JsonNode result = service.get(SYMBOL, OPERATOR, false, SESSION_HEADER);
 
         assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
-        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL);
+        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, SESSION_HEADER);
     }
 
     @Test
     void get_cacheMiss_fetchesFromUpstreamAndStores() throws Exception {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.empty());
-        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL))
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, SESSION_HEADER))
                 .thenReturn(upstreamMarket());
 
-        service.get(SYMBOL, OPERATOR, false);
+        service.get(SYMBOL, OPERATOR, false, SESSION_HEADER);
 
         ArgumentCaptor<LocationDataEntity> captor = ArgumentCaptor.forClass(LocationDataEntity.class);
         verify(repository).upsert(captor.capture());
@@ -100,13 +102,13 @@ class MarketServiceTest {
 
     @Test
     void get_forceRefresh_bypassesCacheAndFetchesUpstream() throws Exception {
-        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL))
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, SESSION_HEADER))
                 .thenReturn(upstreamMarket());
 
-        service.get(SYMBOL, OPERATOR, true);
+        service.get(SYMBOL, OPERATOR, true, SESSION_HEADER);
 
         verify(repository, never()).findBySymbol(any());
-        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL);
+        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, SESSION_HEADER);
     }
 
     /**
@@ -120,12 +122,12 @@ class MarketServiceTest {
         MarketService alwaysStale = new MarketService(repository, spaceTradersClient, objectMapper, Duration.ZERO);
         when(repository.findBySymbol(SYMBOL))
                 .thenReturn(Optional.of(marketEntity(Instant.now().plusSeconds(60).toString())));
-        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL))
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, SESSION_HEADER))
                 .thenReturn(upstreamMarket());
 
-        alwaysStale.get(SYMBOL, OPERATOR, false);
+        alwaysStale.get(SYMBOL, OPERATOR, false, SESSION_HEADER);
 
-        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL);
+        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, SESSION_HEADER);
     }
 
     /** A zero TTL means "never serve from cache", not "cache forever". */
@@ -133,12 +135,12 @@ class MarketServiceTest {
     void zeroTtl_alwaysRefetches() throws Exception {
         MarketService alwaysStale = new MarketService(repository, spaceTradersClient, objectMapper, Duration.ZERO);
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(marketEntity(secondsAgo(1))));
-        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL))
+        when(spaceTradersClient.fetchMarket(SYSTEM, SYMBOL, SESSION_HEADER))
                 .thenReturn(upstreamMarket());
 
-        alwaysStale.get(SYMBOL, OPERATOR, false);
+        alwaysStale.get(SYMBOL, OPERATOR, false, SESSION_HEADER);
 
-        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL);
+        verify(spaceTradersClient).fetchMarket(SYSTEM, SYMBOL, SESSION_HEADER);
     }
 
     @Test
@@ -154,7 +156,7 @@ class MarketServiceTest {
     void get_cacheHit_noTokenAtAll_stillSucceeds() {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.of(marketEntity(secondsAgo(10))));
 
-        JsonNode result = service.get(SYMBOL, null, false);
+        JsonNode result = service.get(SYMBOL, null, false, null);
 
         assertThat(result.path("symbol").asText()).isEqualTo(SYMBOL);
         verifyNoInteractions(spaceTradersClient);
@@ -164,7 +166,7 @@ class MarketServiceTest {
     void get_cacheMiss_noToken_throwsUnauthorizedWithoutCallingUpstream() {
         when(repository.findBySymbol(SYMBOL)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.get(SYMBOL, null, false))
+        assertThatThrownBy(() -> service.get(SYMBOL, null, false, null))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus())
                         .isEqualTo(HttpStatus.UNAUTHORIZED));
@@ -173,7 +175,7 @@ class MarketServiceTest {
 
     @Test
     void get_malformedSymbol_rejectedBeforeTouchingTheCache() {
-        assertThatThrownBy(() -> service.get("NOSEPARATOR", OPERATOR, false))
+        assertThatThrownBy(() -> service.get("NOSEPARATOR", OPERATOR, false, SESSION_HEADER))
                 .isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(repository, spaceTradersClient);
     }
