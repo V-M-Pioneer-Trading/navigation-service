@@ -183,7 +183,7 @@ fetches answer `504`.
 | Trigger                    | What runs                                                     |
 |----------------------------|---------------------------------------------------------------|
 | `pull_request` → `main`    | `./gradlew test`                                              |
-| `push` → `main`, tags `v*` | Build and push `linux/amd64` + `linux/arm64` image, then SSM redeploy |
+| `push` → `main`, tags `v*` | Build and push a `linux/arm64` image on a native arm64 runner (the host is Graviton); SSM redeploy only for the tip of `main` |
 
 Images are `ghcr.io/v-m-pioneer-trading/navigation-service:latest` and
 `:sha-<full_commit_sha>`. `latest` is only tagged on the default branch.
