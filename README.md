@@ -186,7 +186,9 @@ fetches answer `504`.
 | `push` → `main`, tags `v*` | Build and push a `linux/arm64` image on a native arm64 runner (the host is Graviton); SSM redeploy only for the tip of `main` |
 
 Images are `ghcr.io/v-m-pioneer-trading/navigation-service:latest` and
-`:sha-<full_commit_sha>`. `latest` is only tagged on the default branch.
+`:sha-<full_commit_sha>`. `latest` is only tagged on the default branch. The
+images are `linux/arm64` only (the host is Graviton); on an x86 machine, build
+locally instead of pulling.
 
 ```bash
 docker run -d --name navigation-service --restart unless-stopped \
