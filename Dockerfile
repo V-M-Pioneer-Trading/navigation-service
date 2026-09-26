@@ -10,9 +10,8 @@ WORKDIR /app
 # never needs them.
 #
 # GRADLE_USER_HOME moves the download cache off /home/gradle/.gradle, which
-# the gradle image declares a VOLUME: Docker documents writes to a volume path
-# during a build as discarded, so the layer would only hold them because
-# BuildKit happens not to.
+# the gradle image declares a VOLUME. The legacy builder discards build-time
+# writes to a volume path (BuildKit keeps them), so keep the cache out of it.
 #
 # The task reads `configurations` through the project at execution time,
 # which Gradle 9 deprecates; revisit when the image moves past 8.x.
