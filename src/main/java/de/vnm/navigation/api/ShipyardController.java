@@ -2,7 +2,10 @@ package de.vnm.navigation.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import de.vnm.navigation.auth.ClerkAuthFilter;
+import de.vnm.navigation.auth.Scopes;
 import de.vnm.navigation.auth.Session;
+import de.vnm.navigation.introspection.web.AllowPublic;
+import de.vnm.navigation.introspection.web.RequireScope;
 import de.vnm.navigation.service.ShipyardService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -46,6 +49,7 @@ public class ShipyardController {
         @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
                      content = @Content)
     })
+    @AllowPublic
     @GetMapping("/waypoints/{symbol}/shipyard")
     public ResponseEntity<JsonNode> getShipyard(
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")
@@ -79,6 +83,7 @@ public class ShipyardController {
         @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
                      content = @Content)
     })
+    @RequireScope(Scopes.UNIVERSE_REFRESH)
     @PostMapping("/waypoints/{symbol}/shipyard/refresh")
     public ResponseEntity<JsonNode> refreshShipyard(
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")

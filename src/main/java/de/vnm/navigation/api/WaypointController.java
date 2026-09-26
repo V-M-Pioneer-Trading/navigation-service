@@ -2,7 +2,10 @@ package de.vnm.navigation.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import de.vnm.navigation.auth.ClerkAuthFilter;
+import de.vnm.navigation.auth.Scopes;
 import de.vnm.navigation.auth.Session;
+import de.vnm.navigation.introspection.web.AllowPublic;
+import de.vnm.navigation.introspection.web.RequireScope;
 import de.vnm.navigation.service.WaypointService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -60,6 +63,7 @@ public class WaypointController {
         @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
                      content = @Content)
     })
+    @AllowPublic
     @GetMapping("/waypoints/{symbol}")
     public ResponseEntity<JsonNode> getWaypoint(
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")
@@ -94,6 +98,7 @@ public class WaypointController {
         @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
                      content = @Content)
     })
+    @RequireScope(Scopes.UNIVERSE_REFRESH)
     @PostMapping("/waypoints/{symbol}/refresh")
     public ResponseEntity<JsonNode> refreshWaypoint(
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")
@@ -132,6 +137,7 @@ public class WaypointController {
         @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
                      content = @Content)
     })
+    @AllowPublic
     @GetMapping("/systems/{systemSymbol}/waypoints")
     public ResponseEntity<Map<String, Object>> getWaypointsBySystem(
             @Parameter(description = "System symbol, e.g. X1-FQ86")
@@ -165,6 +171,7 @@ public class WaypointController {
         @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
                      content = @Content)
     })
+    @RequireScope(Scopes.UNIVERSE_REFRESH)
     @PostMapping("/systems/{systemSymbol}/waypoints/refresh")
     public ResponseEntity<Map<String, Object>> refreshWaypointsBySystem(
             @Parameter(description = "System symbol, e.g. X1-FQ86")

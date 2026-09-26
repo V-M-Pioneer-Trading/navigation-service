@@ -2,7 +2,10 @@ package de.vnm.navigation.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import de.vnm.navigation.auth.ClerkAuthFilter;
+import de.vnm.navigation.auth.Scopes;
 import de.vnm.navigation.auth.Session;
+import de.vnm.navigation.introspection.web.AllowPublic;
+import de.vnm.navigation.introspection.web.RequireScope;
 import de.vnm.navigation.service.MarketService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -47,6 +50,7 @@ public class MarketController {
         @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
                      content = @Content)
     })
+    @AllowPublic
     @GetMapping("/waypoints/{symbol}/market")
     public ResponseEntity<JsonNode> getMarket(
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")
@@ -80,6 +84,7 @@ public class MarketController {
         @ApiResponse(responseCode = "502", description = "st-gateway answered with something unreadable",
                      content = @Content)
     })
+    @RequireScope(Scopes.UNIVERSE_REFRESH)
     @PostMapping("/waypoints/{symbol}/market/refresh")
     public ResponseEntity<JsonNode> refreshMarket(
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")
