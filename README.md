@@ -150,8 +150,9 @@ The rules, in the order they are applied:
 A presented token that does not verify is `401` on every route, public reads included — a
 bad credential is never quietly downgraded to anonymous. `fleet:control` does not imply
 `universe:refresh` (decision 20), and the `403` names no scope. `Bearer abc def`,
-`Bearer `, a non-Bearer scheme and two `Authorization` lines are all *no credential*: a
-visitor on a read, `401` on a refresh, and auth-service is not asked.
+`Bearer `, a non-Bearer scheme, a header holding any non-ASCII character, and more than
+one `Authorization` line (whatever the lines hold, an empty one included) are all *no
+credential*: a visitor on a read, `401` on a refresh, and auth-service is not asked.
 
 **Every handler must declare.** At startup the service walks every `@RequestMapping`
 handler method — its own and the libraries' — and refuses to start if one carries no
@@ -167,8 +168,10 @@ How Spring's own dispatch lines up with the fleet's rules:
 - **`HEAD`** is dispatched by Spring to the `GET` handler of the same path, so it carries
   that handler's declaration: a visitor on a public read, a `401` on a guarded one.
 - **`OPTIONS`** on a path whose handlers do not map it is answered by Spring itself, with
-  an `Allow` header and no handler run; it is declared public, so a visitor proceeds and a
-  bad token is still a `401`. A handler that maps `OPTIONS` explicitly is governed by its
+  an `Allow` header and no handler run. It takes the path's own intent: where every handler
+  ignores credentials (health, API docs, `/error`) its `OPTIONS` ignores them too and never
+  asks auth-service; elsewhere it is public, so a visitor proceeds and a bad token is still
+  a `401`. A handler that maps `OPTIONS` explicitly is governed by its
   own declaration. The path's existence and methods are disclosed this way, as Express
   discloses them.
 - **CORS preflights** are terminated by Spring's CORS handling (`CorsConfig`); no
@@ -223,7 +226,7 @@ fetches answer `504`.
 | `MARKET_CACHE_TTL`    | `60s`                   | Market cache lifetime. `0s` disables market caching.    |
 | `CORS_ALLOWED_ORIGIN` | `http://localhost:3000` | Comma-separated browser origins allowed on `/api/**`.   |
 | `AUTH_INTROSPECTION_URL` | —                    | **Required.** The **full** introspection endpoint, `/auth/v1/introspect` included, POSTed to verbatim — never a base URL. Production: `http://localhost:3005/auth/v1/introspect`. |
-| `AUTH_INTROSPECTION_SECRET` | —                 | **Required.** Sent as `X-Introspection-Secret`. Never the vault's `AUTH_SERVICE_SHARED_SECRET`. |
+| `AUTH_INTROSPECTION_SECRET` | —                 | **Required.** Sent as `X-Introspection-Secret`. Printable ASCII, read raw: a `${…}` in it is part of the secret, never a Spring placeholder. Never the vault's `AUTH_SERVICE_SHARED_SECRET`. |
 
 Without either introspection variable the service refuses to start, naming the one that
 is missing; there is no auth-optional mode. `CLERK_JWT_KEY`, `CLERK_JWT_KEY_FILE` and

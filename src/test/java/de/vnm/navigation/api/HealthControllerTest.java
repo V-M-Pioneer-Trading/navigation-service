@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.head;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -29,8 +30,8 @@ class HealthControllerTest {
 
     @DynamicPropertySource
     static void center(DynamicPropertyRegistry registry) {
-        registry.add("auth.introspection.url", BROKEN_CENTER::url);
-        registry.add("auth.introspection.secret", () -> "health-test-secret");
+        registry.add("AUTH_INTROSPECTION_URL", BROKEN_CENTER::url);
+        registry.add("AUTH_INTROSPECTION_SECRET", () -> "health-test-secret");
     }
 
     @Autowired MockMvc mockMvc;
@@ -46,6 +47,21 @@ class HealthControllerTest {
         mockMvc.perform(get(path))
                .andExpect(status().isOk())
                .andExpect(jsonPath("$.status").value("ok"));
+
+        assertThat(BROKEN_CENTER.calls()).isZero();
+    }
+
+    /**
+     * OPTIONS on a health path is answered by Spring's own responder, which takes the path's
+     * intent: every handler there ignores credentials, so its OPTIONS does too. Regression:
+     * the responder was declared {@code none}, so a bearer made it ask the center and a broken
+     * center made the health path answer 503.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"/health", "/api/navigation/health"})
+    void optionsWithABearer_neverAsksTheCenter(String path) throws Exception {
+        mockMvc.perform(options(path).header("Authorization", "Bearer x"))
+               .andExpect(status().isOk());
 
         assertThat(BROKEN_CENTER.calls()).isZero();
     }

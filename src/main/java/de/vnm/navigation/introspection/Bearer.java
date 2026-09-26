@@ -9,11 +9,7 @@ import java.util.Optional;
  *
  * <p>A credential is <b>exactly</b> the scheme plus one token68: two whitespace-separated
  * parts, the scheme compared case-insensitively (RFC 7235), so {@code bearer abc} is a
- * credential. "Whitespace" is Unicode whitespace, exactly as agent-service's
- * {@code strings.Fields} and the TypeScript client's {@code /\s+/} read it, so
- * a vertical tab (U+000B) between scheme and token separates them, and a no-break space
- * (U+00A0) inside the token splits it into a third part. Everything else is no credential
- * at all, which the policy answers with
+ * credential. Everything else is no credential at all, which the policy answers with
  * {@code 401 a bearer token is required} <i>without</i> calling the center:
  *
  * <ul>
@@ -23,10 +19,14 @@ import java.util.Optional;
  *       A header is never concatenated, and never split with a limit so the remainder
  *       survives intact — which is exactly what this service's own filter did before
  *       decision 21.</li>
- *   <li>Two {@code Authorization} header lines arrive here joined, as
- *       {@code "Bearer a, Bearer b"}: four parts, so none. Picking one would let a caller
- *       choose which of two credentials a proxy sees this service verify.</li>
+ *   <li>{@code "Bearer a, Bearer b"}, the way a proxy folds two lines, is four parts, so
+ *       none. (Two lines reaching this service are refused before they get here.)</li>
  *   <li>Any other scheme — {@code Basic …} — is not forwarded either.</li>
+ *   <li>A header holding <b>any character outside ASCII</b>. A token68 is ASCII by
+ *       definition, and Tomcat decodes header bytes as ISO-8859-1, so a non-ASCII byte
+ *       could not survive the byte-for-byte relay to st-gateway anyway — it arrived there
+ *       as {@code ?}. Refusing it also settles every Unicode-whitespace question: what is
+ *       left to split is ASCII, where this reads exactly as Go's {@code strings.Fields}.</li>
  * </ul>
  *
  * <p>The token itself is opaque: never parsed, decoded, validated or logged.
@@ -42,10 +42,10 @@ public final class Bearer {
      * @return the token, or empty when the value is not exactly {@code <bearer> <token>}
      */
     public static Optional<String> tokenFrom(String authorization) {
-        if (authorization == null) {
+        if (authorization == null || authorization.chars().anyMatch(c -> c > 0x7F)) {
             return Optional.empty();
         }
-        List<String> parts = Fields.unicode(authorization);
+        List<String> parts = Fields.whitespace(authorization);
         if (parts.size() != 2 || !parts.get(0).equalsIgnoreCase(SCHEME)) {
             return Optional.empty();
         }

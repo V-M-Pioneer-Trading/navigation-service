@@ -161,8 +161,11 @@ jobs:
       # send-command returns as soon as the command is queued, so without the
       # wait this job, and the concurrency slot above, were released while the
       # host was still pulling and restarting, and a bootstrap that failed left the
-      # run green. This bootstrap has no /health check, so Success means the
-      # container was started, not that it is healthy (meta#89).
+      # run green. The bootstrap polls the container's /health with curl (60
+      # tries, 3 s apart, infrastructure#89) and fails the SSM command when it
+      # never answers, so Success means the new container is up and answering
+      # /health, and a container that crash-loops (for example started without
+      # AUTH_INTROSPECTION_URL or _SECRET) turns this step red.
       # The SSM output is not printed: these logs are public and the
       # bootstrap's failure path dumps container logs. Read it in the SSM
       # console under the command ID echoed below.

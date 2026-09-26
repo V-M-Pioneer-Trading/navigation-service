@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The stand-in auth-service every web test points {@code auth.introspection.url} at: one
+ * The stand-in auth-service every web test points {@code AUTH_INTROSPECTION_URL} at: one
  * {@link StubCenter} per JVM, answering a fixed table of test tokens. It replaces the
  * per-run keypair the Clerk tests signed with — nothing in this service's tests signs a
  * token any more, and the tokens below are deliberately not JWTs.
@@ -67,8 +67,8 @@ public final class TestCenter {
 
     /** Points the application at the shared center: call from a {@code @DynamicPropertySource}. */
     public static void register(DynamicPropertyRegistry registry) {
-        registry.add("auth.introspection.url", () -> center().url());
-        registry.add("auth.introspection.secret", () -> SECRET);
+        registry.add("AUTH_INTROSPECTION_URL", () -> center().url());
+        registry.add("AUTH_INTROSPECTION_SECRET", () -> SECRET);
     }
 
     private static StubCenter.Reply answer(StubCenter.Received request) {

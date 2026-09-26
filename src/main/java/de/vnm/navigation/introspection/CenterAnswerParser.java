@@ -105,7 +105,7 @@ public final class CenterAnswerParser {
         }
 
         String scopes = scope == null ? "" : scope.textValue();
-        return new CenterAnswer.Active(new Identity(sub.textValue(), kind.textValue(), Fields.ascii(scopes)));
+        return new CenterAnswer.Active(new Identity(sub.textValue(), kind.textValue(), Fields.scopeSeparators(scopes)));
     }
 
     /**

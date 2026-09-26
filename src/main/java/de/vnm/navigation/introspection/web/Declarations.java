@@ -5,12 +5,17 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.web.servlet.error.BasicErrorController;
 import org.springframework.web.cors.CorsUtils;
 import org.springframework.web.method.HandlerMethod;
+import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import org.springframework.web.servlet.resource.ResourceHttpRequestHandler;
+import org.springframework.web.util.ServletRequestPathUtils;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Resolves the {@link Declaration} of whatever handler Spring MVC matched. The declaration
@@ -33,9 +38,11 @@ import java.util.List;
  *       <td>ignore credentials</td><td>renders an error for a request already decided;
  *       reached directly, it answers safe methods only</td></tr>
  *   <tr><td>Spring MVC's built-in {@code OPTIONS} responder</td>
- *       <td>{@code none}</td><td>the fixture's {@code options-with-no-declared-scope}: it
+ *       <td>ignore credentials when every handler on the path does; otherwise
+ *       {@code none}</td><td>the fixture's {@code options-with-no-declared-scope}: it
  *       answers {@code Allow} for a path whose handlers declared nothing for
- *       {@code OPTIONS}, and runs no handler</td></tr>
+ *       {@code OPTIONS}, and runs no handler; on health or docs it must not ask the
+ *       center either</td></tr>
  *   <tr><td>The CORS preflight handler</td><td>ignore credentials</td><td>the CORS layer
  *       terminating a preflight, which carries no {@code Authorization} header by
  *       definition; no controller runs</td></tr>
@@ -69,9 +76,18 @@ public final class Declarations {
 
     private Declarations() {}
 
-    /** The declaration of the handler Spring matched for {@code request}. */
-    public static Declaration of(HttpServletRequest request, Object handler) {
+    /**
+     * The declaration of the handler Spring matched for {@code request}.
+     *
+     * @param mappings the application's request mappings, consulted only when Spring's own
+     *                 {@code OPTIONS} responder was chosen (see {@link #optionsResponder})
+     */
+    public static Declaration of(HttpServletRequest request, Object handler,
+                                 Collection<RequestMappingHandlerMapping> mappings) {
         if (handler instanceof HandlerMethod method) {
+            if (method.getBeanType().getName().equals(SPRING_OPTIONS_RESPONDER)) {
+                return optionsResponder(request, mappings);
+            }
             return of(method);
         }
         if (CorsUtils.isPreFlightRequest(request) && handler.getClass().getName().equals(SPRING_PREFLIGHT_HANDLER)) {
@@ -81,6 +97,33 @@ public final class Declarations {
             return IGNORED;
         }
         return new Declaration.Undeclared("a " + handler.getClass().getName() + " carries no declaration");
+    }
+
+    /**
+     * Spring's built-in {@code OPTIONS} responder answers {@code Allow} for a path whose
+     * handlers do not map {@code OPTIONS} themselves. It takes the path's own intent: when
+     * every handler mapped to that path ignores credentials (health, API docs, error
+     * rendering), so does its {@code OPTIONS} — otherwise a bearer sent to
+     * {@code OPTIONS /health} would make the health path depend on auth-service. For any other
+     * path it is {@code none}: a visitor proceeds and a presented token is verified
+     * ({@code options-with-no-declared-scope}).
+     */
+    static Declaration optionsResponder(HttpServletRequest request, Collection<RequestMappingHandlerMapping> mappings) {
+        if (!ServletRequestPathUtils.hasParsedRequestPath(request)) {
+            ServletRequestPathUtils.parseAndCache(request);
+        }
+        List<Declaration> forPath = new ArrayList<>();
+        for (RequestMappingHandlerMapping mapping : mappings) {
+            for (Map.Entry<RequestMappingInfo, HandlerMethod> entry : mapping.getHandlerMethods().entrySet()) {
+                if (entry.getKey().getActivePatternsCondition().getMatchingCondition(request) != null) {
+                    forPath.add(of(entry.getValue()));
+                }
+            }
+        }
+        if (!forPath.isEmpty() && forPath.stream().allMatch(d -> d instanceof Declaration.CredentialsIgnored)) {
+            return IGNORED;
+        }
+        return new Declaration.Guarded(Requirement.none());
     }
 
     /** The declaration a handler method carries, or the framework-owned one for its type. */

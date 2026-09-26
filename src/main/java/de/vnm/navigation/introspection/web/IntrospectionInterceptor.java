@@ -14,10 +14,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * The one global enforcement point: every request Spring MVC dispatches to a handler passes
@@ -37,8 +40,9 @@ import java.util.List;
  *       seen here is still {@code HEAD}, which is safe, so it is exempt from default-deny
  *       exactly as {@code GET} is and from nothing else ({@code head-*} cases).</li>
  *   <li>An {@code OPTIONS} no handler declared is answered by Spring's built-in responder,
- *       declared {@code none}: a visitor proceeds, a bearer is still verified
- *       ({@code options-with-no-declared-scope}). A handler that explicitly maps
+ *       which takes the path's own intent: ignore credentials on a path whose handlers all
+ *       ignore them (health, docs), otherwise {@code none} — a visitor proceeds, a bearer is
+ *       still verified ({@code options-with-no-declared-scope}). A handler that explicitly maps
  *       {@code OPTIONS} is governed by its own declaration
  *       ({@code options-on-guarded-route-with-no-header}).</li>
  *   <li>A CORS preflight is terminated by Spring's CORS handling, which this interceptor
@@ -54,9 +58,20 @@ public final class IntrospectionInterceptor implements HandlerInterceptor {
     private static final Logger log = LoggerFactory.getLogger(IntrospectionInterceptor.class);
 
     private final AccessPolicy policy;
+    private final Supplier<Collection<RequestMappingHandlerMapping>> mappings;
 
-    public IntrospectionInterceptor(AccessPolicy policy) {
+    /**
+     * @param mappings the application's request mappings, read per {@code OPTIONS} request
+     *                 answered by Spring's own responder, to give it the path's own intent
+     */
+    public IntrospectionInterceptor(AccessPolicy policy, Supplier<Collection<RequestMappingHandlerMapping>> mappings) {
         this.policy = policy;
+        this.mappings = mappings;
+    }
+
+    /** Without request mappings: Spring's {@code OPTIONS} responder is then always {@code none}. */
+    public IntrospectionInterceptor(AccessPolicy policy) {
+        this(policy, List::of);
     }
 
     @Override
@@ -67,7 +82,7 @@ public final class IntrospectionInterceptor implements HandlerInterceptor {
         }
         String method = request.getMethod();
 
-        return switch (Declarations.of(request, handler)) {
+        return switch (Declarations.of(request, handler, mappings.get())) {
             case Declaration.CredentialsIgnored ignored -> {
                 // The header is not read. A mutating method is refused here even though the
                 // audit refuses to start such a mapping: a framework-owned handler can still
@@ -97,21 +112,22 @@ public final class IntrospectionInterceptor implements HandlerInterceptor {
     }
 
     /**
-     * The {@code Authorization} header as one value, {@code null} when absent. Two header
-     * lines are joined the way a proxy folds them — {@code "Bearer a, Bearer b"} — which is
-     * four parts and therefore no credential; {@code getHeader} alone would silently pick
-     * the first and let a caller choose which credential gets verified.
+     * The {@code Authorization} header when the request carried exactly one such line;
+     * otherwise {@code null}, which the policy reads as no credential. Two or more lines are
+     * no credential whatever they hold: joining them the way a proxy folds them turned
+     * {@code "Bearer a"} plus an empty second line into {@code "Bearer a, "}, which splits
+     * into a credential {@code "a,"}. And {@code getHeader} alone would silently pick the
+     * first line and let a caller choose which credential gets verified.
      */
     private static String authorizationOf(HttpServletRequest request) {
         List<String> lines = Collections.list(request.getHeaders(HttpHeaders.AUTHORIZATION));
-        return lines.isEmpty() ? null : String.join(", ", lines);
+        return lines.size() == 1 ? lines.get(0) : null;
     }
 
     /**
      * Hands the verified caller to the controller. The raw header is republished only here,
      * next to the verification that earned it, so an unverified credential is never relayed
-     * to st-gateway. With a single header line — the only way to get here — the joined value
-     * is that line, byte for byte.
+     * to st-gateway. It is the single header line the request carried, byte for byte.
      */
     private static void publish(HttpServletRequest request, Identity identity, String authorization) {
         request.setAttribute(CallerAttributes.SESSION_ATTRIBUTE,

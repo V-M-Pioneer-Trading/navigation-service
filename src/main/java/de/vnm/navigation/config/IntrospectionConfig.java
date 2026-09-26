@@ -5,12 +5,14 @@ import de.vnm.navigation.introspection.IntrospectionClient;
 import de.vnm.navigation.introspection.IntrospectionSettings;
 import de.vnm.navigation.introspection.web.DeclarationAudit;
 import de.vnm.navigation.introspection.web.IntrospectionInterceptor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.core.env.PropertySource;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 /**
  * Wires the introspection client from {@code AUTH_INTROSPECTION_URL} and
@@ -18,7 +20,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * interceptor on every handler mapping, with no path patterns: a guard scoped to a prefix is
  * a guard a new route can be added outside of.
  *
- * <p>Either variable empty refuses to start; there is no auth-optional mode. The
+ * <p>Both values are read <b>raw</b>, by their environment names, without Spring's
+ * {@code ${…}} placeholder resolution. A secret is opaque bytes: resolved, a secret
+ * containing {@code ${nope}} failed startup with an exception message quoting the whole
+ * secret, and one containing {@code ${SERVER_PORT}} started with a silently different
+ * secret. Either variable empty refuses to start; there is no auth-optional mode. The
  * {@code CLERK_*} variables the deployment may still carry until meta#80 step 10 are read by
  * nothing.
  *
@@ -30,24 +36,30 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class IntrospectionConfig implements WebMvcConfigurer {
 
-    private final String url;
-    private final String secret;
+    private final ConfigurableEnvironment environment;
+    private final ApplicationContext context;
 
-    public IntrospectionConfig(@Value("${auth.introspection.url:}") String url,
-                               @Value("${auth.introspection.secret:}") String secret) {
-        this.url = url;
-        this.secret = secret;
+    public IntrospectionConfig(ConfigurableEnvironment environment, ApplicationContext context) {
+        this.environment = environment;
+        this.context = context;
     }
 
     /** Closed by Spring on shutdown, which releases its connection pool. */
     @Bean
     public IntrospectionClient introspectionClient() {
-        return new IntrospectionClient(IntrospectionSettings.of(url, secret));
+        return new IntrospectionClient(IntrospectionSettings.of(
+                raw(environment, IntrospectionSettings.ENV_URL),
+                raw(environment, IntrospectionSettings.ENV_SECRET)));
     }
 
+    /**
+     * The interceptor looks up the request mappings lazily, per {@code OPTIONS} request, so it
+     * sees them only once they are all registered.
+     */
     @Bean
     public IntrospectionInterceptor introspectionInterceptor() {
-        return new IntrospectionInterceptor(new AccessPolicy(introspectionClient()));
+        return new IntrospectionInterceptor(new AccessPolicy(introspectionClient()),
+                () -> context.getBeansOfType(RequestMappingHandlerMapping.class).values());
     }
 
     /** Runs once every singleton exists, and fails the startup if any handler is undeclared. */
@@ -59,5 +71,20 @@ public class IntrospectionConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(introspectionInterceptor());
+    }
+
+    /**
+     * The value of {@code name} in the first property source that has it — the environment
+     * in production, a test's registration in tests — exactly as that source holds it, with
+     * no placeholder resolution. {@code null} when no source has it.
+     */
+    static String raw(ConfigurableEnvironment environment, String name) {
+        for (PropertySource<?> source : environment.getPropertySources()) {
+            Object value = source.getProperty(name);
+            if (value != null) {
+                return value.toString();
+            }
+        }
+        return null;
     }
 }

@@ -40,18 +40,27 @@ public final class StubCenter implements AutoCloseable {
     public static final String PATH = "/auth/v1/introspect";
 
     /** What the stub answers one request with. */
-    public record Reply(int status, String body, long delayMs, Map<String, String> headers) {
+    public record Reply(int status, String body, long delayMs, long stallMidBodyMs, Map<String, String> headers) {
 
         public static Reply of(int status, String body) {
-            return new Reply(status, body, 0, Map.of());
+            return new Reply(status, body, 0, 0, Map.of());
         }
 
         public static Reply delayed(long delayMs, int status, String body) {
-            return new Reply(status, body, delayMs, Map.of());
+            return new Reply(status, body, delayMs, 0, Map.of());
+        }
+
+        /**
+         * Sends the status line, the headers and the first half of the body at once, then
+         * stalls for {@code stallMs} before the rest: a center that answers instantly and
+         * then dribbles.
+         */
+        public static Reply stallingMidBody(long stallMs, int status, String body) {
+            return new Reply(status, body, 0, stallMs, Map.of());
         }
 
         public static Reply redirectTo(String location) {
-            return new Reply(307, null, 0, Map.of("Location", location));
+            return new Reply(307, null, 0, 0, Map.of("Location", location));
         }
 
         public static Reply inactive() {
@@ -190,8 +199,17 @@ public final class StubCenter implements AutoCloseable {
         try {
             exchange.sendResponseHeaders(reply.status(), bytes.length == 0 ? -1 : bytes.length);
             try (OutputStream out = exchange.getResponseBody()) {
-                out.write(bytes);
+                if (reply.stallMidBodyMs() > 0) {
+                    out.write(bytes, 0, bytes.length / 2);
+                    out.flush();
+                    Thread.sleep(reply.stallMidBodyMs());
+                    out.write(bytes, bytes.length / 2, bytes.length - bytes.length / 2);
+                } else {
+                    out.write(bytes);
+                }
             }
+        } catch (InterruptedException stopped) {
+            Thread.currentThread().interrupt();
         } catch (IOException clientGone) {
             // The client gave up (its timeout) before the delayed answer was written.
         } finally {

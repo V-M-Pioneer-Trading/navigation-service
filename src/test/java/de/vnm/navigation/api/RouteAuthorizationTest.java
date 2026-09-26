@@ -170,6 +170,21 @@ class RouteAuthorizationTest {
         assertThat(TestCenter.center().calls()).isZero();
     }
 
+    /**
+     * Regression: the lines used to be joined the way a proxy folds them, so a valid line
+     * plus an empty one became {@code "Bearer a, "}, which splits into the credential
+     * {@code "a,"} and was sent to the center. More than one line is no credential, whatever
+     * the lines hold.
+     */
+    @Test
+    void refresh_withAnEmptySecondAuthorizationLine_is401AndTheCenterIsNotAsked() throws Exception {
+        expectRejection(mockMvc.perform(post(REFRESH).header("Authorization", TestCenter.OPERATOR_BEARER, "")),
+                401, "a bearer token is required");
+
+        verifyNoInteractions(waypointService);
+        assertThat(TestCenter.center().calls()).isZero();
+    }
+
     /** {@code fleet:control} does not imply {@code universe:refresh} (decision 20), and the 403 names neither. */
     @Test
     void refresh_withASessionLackingTheScope_is403() throws Exception {

@@ -58,7 +58,7 @@ public final class Requirement {
      */
     public static Requirement scope(String literal) {
         Objects.requireNonNull(literal, "scope literal");
-        if (!Fields.ascii(literal).equals(List.of(literal))) {
+        if (!Fields.scopeSeparators(literal).equals(List.of(literal))) {
             throw new IllegalArgumentException(
                     "a required scope must be one non-empty literal without whitespace, not \"" + literal + "\"");
         }

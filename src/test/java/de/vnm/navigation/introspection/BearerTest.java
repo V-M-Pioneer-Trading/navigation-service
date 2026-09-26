@@ -58,19 +58,31 @@ class BearerTest {
     }
 
     /**
-     * The header is split on Unicode whitespace, as agent-service's {@code strings.Fields}
-     * and the TypeScript client's {@code /\s+/} split it. Before, only ASCII runs separated,
-     * so these read differently here than in the rest of the family.
+     * Every ASCII whitespace character Go's {@code strings.Fields} splits on separates here
+     * too, vertical tab and form feed included.
      */
     @ParameterizedTest
-    @ValueSource(strings = {"Bearer\u000Babc", "Bearer\u00A0abc", "Bearer\u2003abc", "Bearer\u0085abc", "\u3000Bearer abc\u2028"})
-    void unicodeWhitespaceSeparatesTheSchemeFromTheToken(String header) {
+    @ValueSource(strings = {"Bearer\u000Babc", "Bearer\fabc", "Bearer\tabc", "Bearer \r\nabc"})
+    void asciiWhitespaceSeparatesTheSchemeFromTheToken(String header) {
         assertThat(Bearer.tokenFrom(header)).contains("abc");
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Bearer abc\u00A0def", "Bearer abc\u000Bdef", "Bearer abc\u2009def"})
-    void unicodeWhitespaceInsideTheTokenMakesAThirdPart(String header) {
+    @ValueSource(strings = {"Bearer abc\u000Bdef", "Bearer abc\fdef"})
+    void asciiWhitespaceInsideTheTokenMakesAThirdPart(String header) {
+        assertThat(Bearer.tokenFrom(header)).isEmpty();
+    }
+
+    /**
+     * Any non-ASCII character makes the header no credential. A token68 is ASCII, and a
+     * non-ASCII byte could not be relayed to st-gateway byte for byte: it arrived as {@code ?}.
+     * Regression: a no-break space or NEL used to separate the scheme from the token, and
+     * {@code Bearer caf\u00e9} was forwarded to the center and then, mangled, upstream.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"Bearer\u00A0abc", "Bearer\u0085abc", "Bearer\u2003abc",
+            "\u3000Bearer abc", "Bearer abc\u2028", "Bearer caf\u00e9", "Bearer abc\u00A0def"})
+    void anyNonAsciiCharacterIsNoCredential(String header) {
         assertThat(Bearer.tokenFrom(header)).isEmpty();
     }
 }

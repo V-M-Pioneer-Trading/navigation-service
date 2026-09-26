@@ -93,6 +93,43 @@ class ServedApplicationAuthorizationTest {
         assertThat(TestCenter.center().calls()).isZero();
     }
 
+    @Test
+    void twoAuthorizationLines_oneOfThemEmpty_areNoCredential() throws Exception {
+        HttpResponse<String> response = send(request("/api/navigation/v1/waypoints/X1-FQ86-B29/refresh")
+                .header("Authorization", TestCenter.OPERATOR_BEARER)
+                .header("Authorization", "")
+                .POST(HttpRequest.BodyPublishers.noBody()));
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.body()).isEqualTo("{\"error\":{\"message\":\"a bearer token is required\"}}");
+        assertThat(TestCenter.center().calls()).isZero();
+    }
+
+    /**
+     * OPTIONS on a path whose handlers all ignore credentials ignores them too, over real
+     * Tomcat, with a bearer the center would fail on. Regression: these answered 503.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"/health", "/api/navigation/health", "/api-docs", "/error"})
+    void optionsOnAnIgnoredPath_neverAsksTheCenter(String path) throws Exception {
+        HttpResponse<String> response = send(request(path).header("Authorization", TestCenter.CENTER_FAILS_BEARER)
+                .method("OPTIONS", HttpRequest.BodyPublishers.noBody()));
+
+        assertThat(response.statusCode()).isIn(200, 204);
+        assertThat(TestCenter.center().calls()).isZero();
+    }
+
+    /** A path with a guarded handler keeps OPTIONS as {@code none}: a presented token is checked. */
+    @Test
+    void optionsOnAGuardedPath_stillVerifiesAPresentedToken() throws Exception {
+        HttpResponse<String> response = send(request("/api/navigation/v1/waypoints/X1-FQ86-B29/refresh")
+                .header("Authorization", TestCenter.CENTER_FAILS_BEARER)
+                .method("OPTIONS", HttpRequest.BodyPublishers.noBody()));
+
+        assertThat(response.statusCode()).isEqualTo(503);
+        assertThat(TestCenter.center().calls()).isEqualTo(1);
+    }
+
     /** Tomcat's error dispatch continues a request already decided; it is never re-decided as a 500. */
     @Test
     void anUnknownPath_isA404_andAnUnmappedMethod_isA405() throws Exception {

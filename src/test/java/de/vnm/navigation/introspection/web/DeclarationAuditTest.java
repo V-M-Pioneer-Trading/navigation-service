@@ -35,8 +35,8 @@ class DeclarationAuditTest {
                     ErrorMvcAutoConfiguration.class))
             .withUserConfiguration(IntrospectionConfig.class)
             .withPropertyValues(
-                    "auth.introspection.url=http://127.0.0.1:9/auth/v1/introspect",
-                    "auth.introspection.secret=audit-test-secret");
+                    "AUTH_INTROSPECTION_URL=http://127.0.0.1:9/auth/v1/introspect",
+                    "AUTH_INTROSPECTION_SECRET=audit-test-secret");
 
     @RestController
     static class FullyDeclared {
@@ -148,7 +148,7 @@ class DeclarationAuditTest {
     @Test
     void anEmptyIntrospectionUrlRefusesToStart() {
         runner.withUserConfiguration(FullyDeclared.class)
-              .withPropertyValues("auth.introspection.url=")
+              .withPropertyValues("AUTH_INTROSPECTION_URL=")
               .run(context -> assertThat(startupFailure(context))
                       .hasMessageContaining("AUTH_INTROSPECTION_URL is required"));
     }
@@ -156,7 +156,7 @@ class DeclarationAuditTest {
     @Test
     void anEmptyIntrospectionSecretRefusesToStart() {
         runner.withUserConfiguration(FullyDeclared.class)
-              .withPropertyValues("auth.introspection.secret=")
+              .withPropertyValues("AUTH_INTROSPECTION_SECRET=")
               .run(context -> assertThat(startupFailure(context))
                       .hasMessageContaining("AUTH_INTROSPECTION_SECRET is required"));
     }

@@ -41,16 +41,34 @@ class IntrospectionClientTest {
 
     @Test
     void anAnswerExactlyAtTheCapIsRead() {
-        String body = padded(IntrospectionClient.MAX_RESPONSE_BYTES);
+        String body = padded(65536);
         try (StubCenter center = StubCenter.answering(StubCenter.Reply.of(200, body));
              IntrospectionClient client = clientFor(center)) {
             assertThat(client.introspect("t")).isInstanceOf(CenterAnswer.Active.class);
         }
     }
 
+    /**
+     * The 1000 ms budget covers the whole exchange, body included: a center that sends its
+     * headers at once and then stalls for 30 s mid-body is a 503 after about a second.
+     */
+    @Test
+    void aCenterThatStallsMidBodyIsUnavailableWithinTheBudget() {
+        try (StubCenter center = StubCenter.answering(StubCenter.Reply.stallingMidBody(30_000, 200, ACTIVE + "}"));
+             IntrospectionClient client = clientFor(center)) {
+            long started = System.nanoTime();
+            CenterAnswer answer = client.introspect("t");
+            long elapsedMs = (System.nanoTime() - started) / 1_000_000;
+
+            assertThat(answer).isEqualTo(CenterAnswer.UNAVAILABLE);
+            assertThat(elapsedMs).isGreaterThanOrEqualTo(900).isLessThan(2000);
+            assertThat(center.calls()).isEqualTo(1);
+        }
+    }
+
     @Test
     void anAnswerOneByteOverTheCapIsUnavailable() {
-        String body = padded(IntrospectionClient.MAX_RESPONSE_BYTES + 1);
+        String body = padded(65537);
         try (StubCenter center = StubCenter.answering(StubCenter.Reply.of(200, body));
              IntrospectionClient client = clientFor(center)) {
             assertThat(client.introspect("t")).isEqualTo(CenterAnswer.UNAVAILABLE);

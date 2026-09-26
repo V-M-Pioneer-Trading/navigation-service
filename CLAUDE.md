@@ -209,7 +209,7 @@ Notes that will save time:
 - `IntrospectionConfig` is a `WebMvcConfigurer`, so every `@WebMvcTest` slice runs the real
   interceptor without an `@Import` — the old trap of a slice silently running without the
   guard is gone. The price is that every web slice *and* every `@SpringBootTest` must point
-  `auth.introspection.*` at a center with `TestCenter.register(registry)` in a
+  `AUTH_INTROSPECTION_URL` / `_SECRET` at a center with `TestCenter.register(registry)` in a
   `@DynamicPropertySource`, or the context refuses to start. `TestCenter.OPERATOR` is the
   exact `Session` `TestCenter.OPERATOR_BEARER` is published as, so service mocks can match
   on it by equality. Reset its call counter in `@BeforeEach` before asserting on it.
