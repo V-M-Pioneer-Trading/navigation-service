@@ -31,7 +31,7 @@ class ShipyardServiceTest {
     ShipyardService service;
     ObjectMapper objectMapper = new ObjectMapper();
 
-    private static final Session OPERATOR = new Session("user_test", java.util.Set.of("universe:refresh"));
+    private static final Session OPERATOR = new Session("user_test", "operator", java.util.List.of("universe:refresh"));
     private static final String SYMBOL = "X1-FQ86-B29";
     private static final String SYSTEM = "X1-FQ86";
     /** What the controller hands down: the caller's inbound header, forwarded verbatim. */

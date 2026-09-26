@@ -1,7 +1,7 @@
 package de.vnm.navigation.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import de.vnm.navigation.auth.ClerkAuthFilter;
+import de.vnm.navigation.auth.CallerAttributes;
 import de.vnm.navigation.auth.Scopes;
 import de.vnm.navigation.auth.Session;
 import de.vnm.navigation.introspection.web.AllowPublic;
@@ -36,13 +36,13 @@ public class ShipyardController {
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Shipyard data"),
         @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
-        @ApiResponse(responseCode = "401", description = "Not cached and caller is anonymous",
+        @ApiResponse(responseCode = "401", description = "Not cached and caller is anonymous, or auth-service says a presented token is not active",
                      content = @Content),
         @ApiResponse(responseCode = "404", description = "Waypoint has no shipyard",
                      content = @Content),
         @ApiResponse(responseCode = "4XX", description = "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected",
                      content = @Content),
-        @ApiResponse(responseCode = "503", description = "Relayed from st-gateway: no SpaceTraders credential configured, or auth-service unavailable",
+        @ApiResponse(responseCode = "503", description = "auth-service could not verify a presented token (`the authentication service could not process this request`), or relayed from st-gateway: no SpaceTraders credential configured",
                      content = @Content),
         @ApiResponse(responseCode = "504", description = "st-gateway did not answer",
                      content = @Content),
@@ -57,9 +57,9 @@ public class ShipyardController {
             @Parameter(description = "Bypass cache and re-fetch from SpaceTraders")
             @RequestParam(defaultValue = "false") boolean forceRefresh,
             @Parameter(hidden = true)
-            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session,
+            @RequestAttribute(value = CallerAttributes.SESSION_ATTRIBUTE, required = false) Session session,
             @Parameter(hidden = true)
-            @RequestAttribute(value = ClerkAuthFilter.CALLER_AUTHORIZATION_ATTRIBUTE, required = false)
+            @RequestAttribute(value = CallerAttributes.CALLER_AUTHORIZATION_ATTRIBUTE, required = false)
             String callerAuthorization) {
 
         return ResponseEntity.ok(shipyardService.get(symbol, session, forceRefresh, callerAuthorization));
@@ -72,11 +72,12 @@ public class ShipyardController {
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Updated shipyard data"),
         @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
-        @ApiResponse(responseCode = "401", description = "No Clerk session, or the presented one did not verify", content = @Content),
+        @ApiResponse(responseCode = "401", description = "No bearer token, or auth-service says the presented one is not active", content = @Content),
+        @ApiResponse(responseCode = "403", description = "A verified session without the universe:refresh scope", content = @Content),
         @ApiResponse(responseCode = "404", description = "Waypoint has no shipyard", content = @Content),
         @ApiResponse(responseCode = "4XX", description = "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected",
                      content = @Content),
-        @ApiResponse(responseCode = "503", description = "Relayed from st-gateway: no SpaceTraders credential configured, or auth-service unavailable",
+        @ApiResponse(responseCode = "503", description = "auth-service could not verify a presented token (`the authentication service could not process this request`), or relayed from st-gateway: no SpaceTraders credential configured",
                      content = @Content),
         @ApiResponse(responseCode = "504", description = "st-gateway did not answer",
                      content = @Content),
@@ -89,9 +90,9 @@ public class ShipyardController {
             @Parameter(description = "Waypoint symbol, e.g. X1-FQ86-B29")
             @PathVariable String symbol,
             @Parameter(hidden = true)
-            @RequestAttribute(value = ClerkAuthFilter.SESSION_ATTRIBUTE, required = false) Session session,
+            @RequestAttribute(value = CallerAttributes.SESSION_ATTRIBUTE, required = false) Session session,
             @Parameter(hidden = true)
-            @RequestAttribute(value = ClerkAuthFilter.CALLER_AUTHORIZATION_ATTRIBUTE, required = false)
+            @RequestAttribute(value = CallerAttributes.CALLER_AUTHORIZATION_ATTRIBUTE, required = false)
             String callerAuthorization) {
 
         return ResponseEntity.ok(shipyardService.refresh(symbol, session, callerAuthorization));
