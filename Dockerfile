@@ -8,6 +8,15 @@ WORKDIR /app
 # download. `gradle dependencies` would fetch metadata only; resolving each
 # configuration fetches the jars. Test configurations are skipped: bootJar
 # never needs them.
+#
+# GRADLE_USER_HOME moves the download cache off /home/gradle/.gradle, which
+# the gradle image declares a VOLUME: Docker documents writes to a volume path
+# during a build as discarded, so the layer would only hold them because
+# BuildKit happens not to.
+#
+# The task reads `configurations` through the project at execution time,
+# which Gradle 9 deprecates; revisit when the image moves past 8.x.
+ENV GRADLE_USER_HOME=/app/.gradle-home
 COPY settings.gradle.kts build.gradle.kts ./
 COPY <<'EOF' /tmp/resolve-dependencies.gradle
 allprojects {
