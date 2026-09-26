@@ -3,11 +3,10 @@ package de.vnm.navigation.api;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.vnm.navigation.auth.Session;
-import de.vnm.navigation.auth.TestClerk;
+import de.vnm.navigation.introspection.TestCenter;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import de.vnm.navigation.exception.ApiException;
-import de.vnm.navigation.config.ClerkConfig;
 import de.vnm.navigation.exception.GlobalExceptionHandler;
 import de.vnm.navigation.service.ShipyardService;
 import org.junit.jupiter.api.Test;
@@ -24,7 +23,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(ShipyardController.class)
-@Import({GlobalExceptionHandler.class, ClerkConfig.class})
+@Import(GlobalExceptionHandler.class)
 class ShipyardControllerTest {
 
     @Autowired MockMvc mockMvc;
@@ -32,22 +31,22 @@ class ShipyardControllerTest {
 
     @MockitoBean ShipyardService shipyardService;
 
-    /** What TestClerk.bearer() verifies to, so mocks can match on the exact session. */
-    private static final Session OPERATOR = TestClerk.OPERATOR;
+    /** What TestCenter.OPERATOR_BEARER verifies to, so mocks can match on the exact session. */
+    private static final Session OPERATOR = TestCenter.OPERATOR;
 
     /**
      * One fixed token for the whole class. The controller forwards the caller's inbound
      * header onward verbatim, so a stub matching on these exact bytes is itself the proof
      * that the header reaches the service unchanged.
      */
-    private static final String OPERATOR_BEARER = TestClerk.bearer();
+    private static final String OPERATOR_BEARER = TestCenter.OPERATOR_BEARER;
 
     @DynamicPropertySource
-    static void trustAnchor(DynamicPropertyRegistry registry) {
-        registry.add("clerk.jwt-key", TestClerk::publicKeyPem);
+    static void center(DynamicPropertyRegistry registry) {
+        TestCenter.register(registry);
     }
 
-        private static final String SYMBOL = "X1-FQ86-B29";
+    private static final String SYMBOL = "X1-FQ86-B29";
 
     @Test
     void getShipyard_returns200WithData() throws Exception {

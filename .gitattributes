@@ -1,0 +1,4 @@
+# The vendored introspection fixture is pinned by its sha256 (see
+# src/test/resources/introspection/SOURCE.txt). `-text` keeps a Windows checkout
+# (core.autocrlf=true) byte-identical to a Linux one, so the hash holds on both.
+src/test/resources/introspection/introspection.json -text

@@ -26,9 +26,10 @@ import java.util.Map;
  * rate budget (meta#1/meta#7) rather than hitting SpaceTraders directly.
  *
  * <p>Exactly one credential goes out, and only when the caller presented one: the
- * caller's verified Clerk session, relayed byte for byte on {@code Authorization}.
- * st-gateway re-verifies it and derives the queue lane from it (auth-design.md decision
- * 2), so an operator's map and market lookups share the interactive lane with the rest of
+ * caller's Clerk session, relayed byte for byte on {@code Authorization}, and only once
+ * auth-service has vouched for it. st-gateway establishes the caller's identity from the
+ * same bytes for itself and derives the queue lane from it (auth-design.md decision 2), so
+ * an operator's map and market lookups share the interactive lane with the rest of
  * the dashboard instead of queueing behind autopilot traffic. Forwarding nothing —
  * which this client used to do — is the one way to break that silently: the gateway sees
  * an unidentified call and puts it in {@code background}, with no error anywhere.

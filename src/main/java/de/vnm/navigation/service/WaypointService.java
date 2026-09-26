@@ -33,7 +33,7 @@ import java.util.Optional;
  *
  * <h3>Who may fetch live</h3>
  * A cache hit needs no identity at all, which is what makes reads public; a live fetch
- * requires a verified Clerk session (auth-design.md decisions 2 and 3). The upstream
+ * requires a session auth-service verified (auth-design.md decisions 2, 3 and 21). The upstream
  * game credential is st-gateway's concern, not this service's (decision 5) — but the
  * caller's own session is forwarded to it verbatim, which is how the gateway knows to
  * put an operator's lookup in the interactive lane (decision 2).

@@ -34,11 +34,13 @@ flowchart LR
     DB[("SQLite<br/>waypoints, markets,<br/>shipyards, system_fetches")]
     GW["st-gateway<br/>shared rate budget"]
     ST["SpaceTraders API v2"]
+    AUTH["auth-service<br/>POST /auth/v1/introspect"]
 
     UI -->|"Authorization: Clerk session<br/>(optional on GET)"| NAV
     AUTO --> NAV
     MCP --> NAV
 
+    NAV -->|"only when a bearer is presented:<br/>what does this token carry?"| AUTH
     NAV <-->|"cache hit / store"| DB
     NAV -->|"cache miss only<br/>caller's Clerk session forwarded verbatim<br/>no game token, no priority hint"| GW
     GW --> ST
@@ -50,12 +52,13 @@ st-gateway, which owns the rate budget, injects the fleet's agent token itself
 (decision 2).
 
 That last part is why an outbound request carries the caller's `Authorization` header,
-byte for byte, exactly as it arrived: st-gateway checks the signature itself and puts a
-human operator's call in the `interactive` queue and everything else in `background`. A
-backend that verified the session and then forwarded nothing would silently drop every
-one of its calls into `background` — no error, just a dashboard waiting behind the
-autopilot. Nothing a caller sends can be *spoofed* into a promotion, because the gateway
-trusts the signature rather than the fact that a header arrived.
+byte for byte, exactly as it arrived: st-gateway establishes the caller's identity from
+those bytes for itself and puts a human operator's call in the `interactive` queue and
+everything else in `background`. A backend that verified the session and then forwarded
+nothing would silently drop every one of its calls into `background` — no error, just a
+dashboard waiting behind the autopilot. Nothing a caller sends can be *spoofed* into a
+promotion, because the gateway trusts a verified identity rather than the fact that a
+header arrived.
 
 An anonymous caller has no session to forward, so its request goes out bare and lands in
 `background`, which is the correct lane for it.
@@ -118,28 +121,78 @@ insert of the new ones and the marker update either all land or none do.
 
 ## Authentication
 
-The same networkless Clerk verification every backend in the fleet runs
-(auth-design.md decisions 4 and 10): an RS256 session JWT in `Authorization: Bearer …`,
-checked against the PEM public key in `CLERK_JWT_KEY`. No JWKS fetch, no bypass flag.
+This service verifies no token itself. When a request carries a bearer token it asks
+**auth-service** what that token carries — `POST /auth/v1/introspect`, shaped after
+RFC 7662 — and decides only what its own route needs (auth-design.md decision 21,
+meta#80 step 7). Before that it verified Clerk JWTs locally against `CLERK_JWT_KEY`; that
+code, and the `nimbus-jose-jwt` dependency, are gone.
 
-| Route            | No `Authorization` header | Verified session               | Scope needed       |
-|------------------|---------------------------|--------------------------------|--------------------|
-| `GET …`          | cache only; a miss is 401 | cache, then live fetch on miss | none               |
-| `POST …/refresh` | 401                       | live fetch                     | `universe:refresh` |
+Every handler declares what it needs, on the handler method, in the fleet's vocabulary:
 
-A presented token that does not verify is `401` on every route — a bad credential is never
-quietly downgraded to anonymous. A verified session without `universe:refresh` is `403` on
-the refresh routes; `fleet:control` does not imply it (decision 20).
+| Route | Declaration | No `Authorization` header | Bearer token presented |
+|-------|-------------|---------------------------|------------------------|
+| `GET /api/navigation/v1/…` (4 reads) | `@AllowPublic` | visitor; cache only, a miss is `401`; auth-service **not** asked | auth-service asked; the verified session may live-fetch on a miss |
+| `POST /api/navigation/v1/…/refresh` (4 refreshes) | `@RequireScope("universe:refresh")` | `401` | auth-service asked; `403` without the scope |
+| `GET /health`, `GET /api/navigation/health` | `@IgnoreCredentials` | answers | header never read, auth-service never asked |
+| `GET /api-docs`, Swagger UI | ignore credentials (springdoc's own handlers) | answers | header never read |
 
-Auth failures use the fleet-wide `{"error":{"message":…}}` envelope with the same three
-messages as fleet-service and agent-service, so command-interface needs one parser for
-every backend. This is the one place this service does not emit RFC 9457 problem details.
+The rules, in the order they are applied:
+
+| Situation | Status | Message | auth-service asked |
+|---|---|---|---|
+| A mutating method on a route declaring no scope | `500` | `this route declares no required scope` | no |
+| No `Authorization`, public read | — proceeds as a visitor | | no |
+| No `Authorization`, or anything but exactly `Bearer <token>`, on a refresh | `401` | `a bearer token is required` | no |
+| auth-service says `active: false` | `401` | `invalid or expired session` | yes |
+| Active, but without `universe:refresh` on a refresh | `403` | `this action requires a scope this session does not carry` | yes |
+| auth-service unreachable, slower than 1 s, non-2xx, unreadable, or rejecting our secret | `503` | `the authentication service could not process this request` | yes, once |
+
+A presented token that does not verify is `401` on every route, public reads included — a
+bad credential is never quietly downgraded to anonymous. `fleet:control` does not imply
+`universe:refresh` (decision 20), and the `403` names no scope. `Bearer abc def`,
+`Bearer `, a non-Bearer scheme, a header holding any non-ASCII character, and more than
+one `Authorization` line (whatever the lines hold, an empty one included) are all *no
+credential*: a visitor on a read, `401` on a refresh, and auth-service is not asked.
+
+**Every handler must declare.** At startup the service walks every `@RequestMapping`
+handler method — its own and the libraries' — and refuses to start if one carries no
+declaration, more than one, or declares a read-only intent (`@AllowPublic`,
+`@IgnoreCredentials`) on a mutating method; the message names the mapping and the handler.
+The walk does not see other handler types (static resources, the CORS preflight handler,
+Spring's built-in `OPTIONS` responder): those are declared by type in `Declarations` and
+resolved per request, and a handler type it does not name answers `500`. An undeclared
+handler is never read as "public".
+
+How Spring's own dispatch lines up with the fleet's rules:
+
+- **`HEAD`** is dispatched by Spring to the `GET` handler of the same path, so it carries
+  that handler's declaration: a visitor on a public read, a `401` on a guarded one.
+- **`OPTIONS`** on a path whose handlers do not map it is answered by Spring itself, with
+  an `Allow` header and no handler run. It takes the path's own intent: where every handler
+  ignores credentials (health, API docs, `/error`) its `OPTIONS` ignores them too and never
+  asks auth-service; elsewhere it is public, so a visitor proceeds and a bad token is still
+  a `401`. A handler that maps `OPTIONS` explicitly is governed by its
+  own declaration. The path's existence and methods are disclosed this way, as Express
+  discloses them.
+- **CORS preflights** are terminated by Spring's CORS handling (`CorsConfig`); no
+  controller runs and no header is read.
+- A **trailing slash**, a **case-variant path** or an unknown path matches no handler at
+  all and is a plain `404`; Spring Boot's catch-all static-resource handler is switched
+  off so nothing else answers it.
+
+Auth failures use the fleet-wide `{"error":{"message":…}}` envelope with the same five
+sentences as every other backend, so command-interface needs one parser for all of them.
+This is the one place this service does not emit RFC 9457 problem details, and the
+envelope is written before any controller runs, so the RFC 9457 handler never sees it.
 
 A verified session is used twice: once here, to decide whether this caller may cause a
 live fetch, and once again upstream, because the header it arrived on is forwarded to
-st-gateway unchanged so the gateway can pick the queue lane (decision 2). Only a header
-that verified is relayed — a `Basic` credential, or anything else that is not a Bearer
-token, reads as anonymous here and is not passed on.
+st-gateway byte for byte so the gateway can pick the queue lane (decision 2). Only a header
+auth-service vouched for is relayed; anything else reads as anonymous and is not passed on.
+
+The behaviour is pinned by meta's `fixtures/introspection.json`, vendored into
+`src/test/resources/introspection/` and driven case by case through the real interceptor
+and HTTP client against a stub auth-service.
 
 No SpaceTraders game credential is ever presented to this service: st-gateway holds the
 only copy and injects it upstream (decision 5). The old `X-SpaceTraders-Token` and
@@ -172,9 +225,17 @@ fetches answer `504`.
 | `ST_GATEWAY_URL`      | `http://localhost:3002` | st-gateway base URL; `/proxy` is appended.              |
 | `MARKET_CACHE_TTL`    | `60s`                   | Market cache lifetime. `0s` disables market caching.    |
 | `CORS_ALLOWED_ORIGIN` | `http://localhost:3000` | Comma-separated browser origins allowed on `/api/**`.   |
-| `CLERK_JWT_KEY`       | —                       | Clerk RS256 public key, SPKI PEM; literal `\n` escapes accepted. Wins over the file. |
-| `CLERK_JWT_KEY_FILE`  | —                       | Path to the same key. One of the two is **required**; the service refuses to start otherwise. |
-| `CLERK_ISSUER`        | (unchecked)             | Expected `iss` claim. Optional; the key is what verifies. |
+| `AUTH_INTROSPECTION_URL` | —                    | **Required.** The **full** introspection endpoint, `/auth/v1/introspect` included, POSTed to verbatim — never a base URL. Production: `http://localhost:3005/auth/v1/introspect`. |
+| `AUTH_INTROSPECTION_SECRET` | —                 | **Required.** Sent as `X-Introspection-Secret`. Printable ASCII, read raw: a `${…}` in it is part of the secret, never a Spring placeholder. Never the vault's `AUTH_SERVICE_SHARED_SECRET`. |
+
+Without either introspection variable the service refuses to start, naming the one that
+is missing; there is no auth-optional mode. `CLERK_JWT_KEY`, `CLERK_JWT_KEY_FILE` and
+`CLERK_ISSUER` are no longer read — a deployment may keep setting them (the stack does,
+for rollback, until meta#80 step 10) and they change nothing.
+
+Locally, point it at a running auth-service, e.g.
+`AUTH_INTROSPECTION_URL=http://localhost:3005/auth/v1/introspect` and the secret your
+compose file gives auth-service.
 
 ### Container
 
@@ -196,7 +257,8 @@ docker run -d --name navigation-service --restart unless-stopped \
   -e SQLITE_DB_PATH=/data/nav.db \
   -e ST_GATEWAY_URL=http://st-gateway:3002 \
   -e SPRING_PROFILES_ACTIVE=prod \
-  -e CLERK_JWT_KEY="$CLERK_JWT_KEY" \
+  -e AUTH_INTROSPECTION_URL=http://auth-service:3005/auth/v1/introspect \
+  -e AUTH_INTROSPECTION_SECRET="$AUTH_INTROSPECTION_SECRET" \
   -v nav-data:/data \
   ghcr.io/v-m-pioneer-trading/navigation-service:latest
 ```
@@ -209,7 +271,7 @@ Interactive docs at `GET /swagger-ui.html`, spec at `GET /api-docs`.
 
 | Method | Path                                                  | Description                                    |
 |--------|-------------------------------------------------------|------------------------------------------------|
-| `GET`  | `/health`, `/api/navigation/health`                    | Liveness. Unauthenticated, unversioned.        |
+| `GET`  | `/health`, `/api/navigation/health`                    | Liveness. Unversioned; never reads a credential and never asks auth-service, so it stays up when auth-service is down. |
 | `GET`  | `/api/navigation/v1/waypoints/{symbol}`                | One waypoint.                                  |
 | `POST` | `/api/navigation/v1/waypoints/{symbol}/refresh`        | Re-fetch that waypoint.                        |
 | `GET`  | `/api/navigation/v1/systems/{systemSymbol}/waypoints`  | Every waypoint in a system.                    |
@@ -227,7 +289,7 @@ caller gets `401`. The `universe:refresh` scope guards only the `POST` routes.
 # Cached read, no credential needed
 curl http://localhost:8080/api/navigation/v1/waypoints/X1-FQ86-B29
 
-# Live fetch on a miss: any verified Clerk session
+# Live fetch on a miss: any session auth-service verifies
 curl -H "Authorization: Bearer $CLERK_JWT" \
      http://localhost:8080/api/navigation/v1/systems/X1-FQ86/waypoints
 
@@ -246,17 +308,20 @@ Single resources return the raw SpaceTraders object. System listings wrap it:
 
 ### Errors
 
-[RFC 9457 problem details](https://www.rfc-editor.org/rfc/rfc9457), `application/problem+json`.
+[RFC 9457 problem details](https://www.rfc-editor.org/rfc/rfc9457), `application/problem+json`
+— except the authentication rejections, which use the fleet's `{"error":{"message":…}}`
+envelope and `application/json` (see [Authentication](#authentication)).
 
 | Status | When                                                                              |
 |--------|-----------------------------------------------------------------------------------|
 | `400`  | Malformed waypoint or system symbol.                                              |
-| `401`  | Invalid session anywhere; no session on a refresh; or an anonymous cache miss.     |
-| `403`  | A verified session without `universe:refresh` on a refresh route.                 |
+| `401`  | Invalid session anywhere; no session on a refresh (both the auth envelope); or an anonymous cache miss (problem details). |
+| `403`  | A verified session without `universe:refresh` on a refresh route (auth envelope). |
+| `503 the authentication service could not process this request` | A bearer token was presented and auth-service could not be asked (auth envelope). Distinct from st-gateway's relayed `503` below. |
 | `4xx`/`5xx` from st-gateway | Relayed unchanged, with the gateway's own message and its `Retry-After` / `X-RateLimit-*` headers. That includes `404` for a waypoint that does not exist, `429` when the shared rate budget is spent, and `503 SpaceTraders credential not configured` when auth-service holds no agent token. |
 | `504`  | st-gateway did not answer at all — unreachable, DNS failure, or a read timeout.    |
 | `502`  | st-gateway answered with something this service could not read.                    |
-| `500`  | A cached row that can no longer be parsed (refresh the resource to clear it) — or a relayed gateway `500`. The message says which. |
+| `500`  | A cached row that can no longer be parsed (refresh the resource to clear it) — or a relayed gateway `500`. The message says which. `500 this route declares no required scope` (auth envelope) is a routing-table defect in this service, not something the caller did. |
 
 Everything except the relayed row is this service's own verdict. The relayed row is
 st-gateway's: it is the only party that talked to SpaceTraders and the only one that can
@@ -295,6 +360,10 @@ and driven from a vendored copy of its fixtures.
 
 ## Related services
 
+- **auth-service** — the only component that verifies a Clerk token. This service asks
+  its `POST /auth/v1/introspect` about every bearer token it is shown, once, with a 1 s
+  budget, no retries and no cache; when it cannot be asked, credentialed requests answer
+  `503` and anonymous reads and health keep working.
 - **st-gateway** — owns the SpaceTraders rate budget, the agent token, and the
   `interactive`/`background` priority queue. All upstream traffic goes through it, with
   the caller's Clerk session forwarded so the gateway can pick the lane.

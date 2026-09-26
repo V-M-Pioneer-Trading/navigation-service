@@ -3,7 +3,7 @@ package de.vnm.navigation;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.vnm.navigation.auth.Session;
-import de.vnm.navigation.auth.TestClerk;
+import de.vnm.navigation.introspection.TestCenter;
 import de.vnm.navigation.client.SpaceTradersClient;
 import de.vnm.navigation.repository.WaypointRepository;
 import de.vnm.navigation.service.MarketService;
@@ -42,7 +42,7 @@ class NavigationCacheIntegrationTest {
 
     private static final Path DATABASE = temporaryDatabase();
 
-    private static final Session OPERATOR = new Session("user_test", java.util.Set.of("universe:refresh"));
+    private static final Session OPERATOR = new Session("user_test", "operator", java.util.List.of("universe:refresh"));
     private static final String SYSTEM = "X1-FQ86";
     /** What a controller hands down: the caller's inbound header, forwarded verbatim. */
     private static final String SESSION_HEADER = "Bearer eyJhbGciOiJSUzI1NiJ9.e30.c2ln";
@@ -50,7 +50,7 @@ class NavigationCacheIntegrationTest {
     @DynamicPropertySource
     static void sqliteFile(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", () -> "jdbc:sqlite:" + DATABASE);
-        registry.add("clerk.jwt-key", TestClerk::publicKeyPem);
+        TestCenter.register(registry);
     }
 
     @MockitoBean SpaceTradersClient spaceTradersClient;
