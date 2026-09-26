@@ -138,9 +138,10 @@ Each of these is stated so a violation is visible in a diff:
 `ApplicationEnvironmentPreparedEvent` → Hikari opens the single connection → Spring runs
 `schema.sql` (`spring.sql.init.mode=always`, all `CREATE TABLE IF NOT EXISTS`) → beans
 start (`IntrospectionConfig` refuses here without `AUTH_INTROSPECTION_URL` /
-`_SECRET`) → once every singleton exists, `DeclarationAudit` walks every handler mapping
-and refuses to start if one is undeclared. The initializer is registered in `main`, not as
-a `@Bean`, precisely because bean creation is already too late.
+`_SECRET`) → once every singleton exists, `DeclarationAudit` walks every
+`@RequestMapping` handler and refuses to start if one is undeclared (other handler types
+are resolved per request by `Declarations`). `SqliteDirectoryInitializer` is registered in
+`main`, not as a `@Bean`, precisely because bean creation is already too late.
 
 **One request, in order.** Spring matches the handler → CORS (a preflight ends here) →
 `IntrospectionInterceptor` reads the matched handler's declaration → default-deny for a
@@ -240,7 +241,7 @@ Notes that will save time:
 - **`MockRestServiceServer` expectations are ordered.** A pagination test must declare
   `page=1` before `page=2`, and the full URL including query string has to match.
 
-No flaky test is currently known. The suite was at 319 tests (11 of them the skipped
+No flaky test is currently known. The suite was at 334 tests (11 of them the skipped
 st-gateway fixture cases) when this file was last updated.
 
 ## Extension conventions

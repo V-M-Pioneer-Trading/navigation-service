@@ -153,11 +153,14 @@ bad credential is never quietly downgraded to anonymous. `fleet:control` does no
 `Bearer `, a non-Bearer scheme and two `Authorization` lines are all *no credential*: a
 visitor on a read, `401` on a refresh, and auth-service is not asked.
 
-**Every handler must declare.** At startup the service walks every route Spring MVC can
-dispatch to and refuses to start if one carries no declaration, more than one, or declares
-a read-only intent (`@AllowPublic`, `@IgnoreCredentials`) on a mutating method; the
-message names the mapping and the handler. An undeclared handler is never read as
-"public". At request time the same rule answers `500` for anything the walk could not see.
+**Every handler must declare.** At startup the service walks every `@RequestMapping`
+handler method — its own and the libraries' — and refuses to start if one carries no
+declaration, more than one, or declares a read-only intent (`@AllowPublic`,
+`@IgnoreCredentials`) on a mutating method; the message names the mapping and the handler.
+The walk does not see other handler types (static resources, the CORS preflight handler,
+Spring's built-in `OPTIONS` responder): those are declared by type in `Declarations` and
+resolved per request, and a handler type it does not name answers `500`. An undeclared
+handler is never read as "public".
 
 How Spring's own dispatch lines up with the fleet's rules:
 

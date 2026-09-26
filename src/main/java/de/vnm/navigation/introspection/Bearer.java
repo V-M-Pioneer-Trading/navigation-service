@@ -9,7 +9,11 @@ import java.util.Optional;
  *
  * <p>A credential is <b>exactly</b> the scheme plus one token68: two whitespace-separated
  * parts, the scheme compared case-insensitively (RFC 7235), so {@code bearer abc} is a
- * credential. Everything else is no credential at all, which the policy answers with
+ * credential. "Whitespace" is Unicode whitespace, exactly as agent-service's
+ * {@code strings.Fields} and the TypeScript client's {@code /\s+/} read it, so
+ * a vertical tab (U+000B) between scheme and token separates them, and a no-break space
+ * (U+00A0) inside the token splits it into a third part. Everything else is no credential
+ * at all, which the policy answers with
  * {@code 401 a bearer token is required} <i>without</i> calling the center:
  *
  * <ul>
@@ -41,7 +45,7 @@ public final class Bearer {
         if (authorization == null) {
             return Optional.empty();
         }
-        List<String> parts = AsciiWhitespace.split(authorization);
+        List<String> parts = Fields.unicode(authorization);
         if (parts.size() != 2 || !parts.get(0).equalsIgnoreCase(SCHEME)) {
             return Optional.empty();
         }

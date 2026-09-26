@@ -33,6 +33,20 @@ class CenterAnswerParserTest {
         assertThat(parse("{\"active\":false}")).isEqualTo(CenterAnswer.INACTIVE);
     }
 
+    /**
+     * A {@code null} is judged only where a rule reads the key, as agent-service judges it:
+     * nothing past {@code active} is read for an inactive answer. Before, any {@code null}
+     * contract key made this a 503 here and a 401 in Go.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"active\":false,\"sub\":null}",
+            "{\"active\":false,\"scope\":null,\"exp\":null,\"kind\":null}",
+    })
+    void anInactiveAnswerIsInactiveWhateverItsOtherKeysHold(String body) throws Exception {
+        assertThat(parse(body)).isEqualTo(CenterAnswer.INACTIVE);
+    }
+
     /** Fixture version 3: RFC 7662 makes {@code scope} optional; absent means no scopes. */
     @Test
     void anAbsentScopeIsTheEmptyList() throws Exception {
@@ -55,7 +69,7 @@ class CenterAnswerParserTest {
     @Test
     void aUnicodeSpaceInsideAScopeIsPartOfTheScope() throws Exception {
         CenterAnswer answer = parse("{\"active\":true,\"sub\":\"u\",\"scope\":\"a\\u00a0b c\",\"exp\":1,\"kind\":\"operator\"}");
-        assertThat(((CenterAnswer.Active) answer).identity().scopes()).containsExactly("a b", "c");
+        assertThat(((CenterAnswer.Active) answer).identity().scopes()).containsExactly("a\u00a0b", "c");
     }
 
     /** RFC 7662 §2.2 allows extension members; they are not ours to refuse. */
@@ -124,9 +138,8 @@ class CenterAnswerParserTest {
             "{\"active\":true,\"sub\":\"u\",\"exp\":null,\"kind\":\"operator\"}",
             "{\"active\":true,\"sub\":\"u\",\"exp\":1,\"kind\":null}",
             "{\"active\":true,\"sub\":\"u\",\"exp\":1,\"kind\":\"operator\",\"scope\":null}",
-            "{\"active\":false,\"scope\":null}",
     })
-    void aNullContractValueIsNotTheContract(String body) {
+    void aNullWhereARuleReadsTheKeyIsNotTheContract(String body) {
         assertMalformed(body);
     }
 
@@ -142,6 +155,8 @@ class CenterAnswerParserTest {
             "{\"active\":true,\"sub\":42,\"exp\":1,\"kind\":\"operator\"}",
             "{\"active\":true,\"sub\":\"u\",\"kind\":\"operator\"}",
             "{\"active\":true,\"sub\":\"u\",\"exp\":\"4102444800\",\"kind\":\"operator\"}",
+            "{\"active\":true,\"sub\":\"u\",\"exp\":1e400,\"kind\":\"operator\"}",
+            "{\"active\":true,\"sub\":\"u\",\"exp\":-1e400,\"kind\":\"operator\"}",
             "{\"active\":true,\"sub\":\"u\",\"exp\":1}",
             "{\"active\":true,\"sub\":\"u\",\"exp\":1,\"kind\":\"Operator\"}",
             "{\"active\":true,\"sub\":\"u\",\"exp\":1,\"kind\":\"robot\"}",

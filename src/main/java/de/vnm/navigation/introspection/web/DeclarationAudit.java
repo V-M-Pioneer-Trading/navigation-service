@@ -16,12 +16,16 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Refuses to start the application while any handler Spring MVC can dispatch to lacks a
+ * Refuses to start the application while any request-mapped handler method lacks a
  * declaration — the Java counterpart of the family's {@code secured()} and agent-service's
  * {@code secureRouter}.
  *
- * <p>It walks every {@link RequestMappingHandlerMapping} once all singletons exist, and
- * collects every problem before failing, so one startup names them all:
+ * <p>It walks the handler methods of every {@link RequestMappingHandlerMapping} — every
+ * {@code @RequestMapping} in the application, ours and the libraries' — once all singletons
+ * exist, and collects every problem before failing, so one startup names them all. It does
+ * <b>not</b> see handlers of other types (resource handlers, CORS preflight, Spring's
+ * built-in {@code OPTIONS} responder); those are resolved at request time by
+ * {@link Declarations}, and any type it does not name is refused with a 500. The problems:
  *
  * <ul>
  *   <li>a handler method carrying no declaration, or more than one, or an unusable

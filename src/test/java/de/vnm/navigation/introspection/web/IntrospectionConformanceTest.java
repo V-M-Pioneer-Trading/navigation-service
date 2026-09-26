@@ -367,12 +367,16 @@ class IntrospectionConformanceTest {
         throw new AssertionError("no FixtureRoutes probe declares \"" + requires + "\"; add one");
     }
 
-    /** The token part of a header, computed independently of the code under test. */
+    /**
+     * The token part of a header, computed independently of the code under test: split on
+     * Unicode whitespace (the regex engine's, not {@code Fields}), so a header the code
+     * splits into two parts yields a token here too and the leak assertions check it.
+     */
     private static String tokenOf(String authorization) {
         if (authorization == null) {
             return null;
         }
-        String[] parts = authorization.trim().split("[ \t]+");
+        String[] parts = authorization.strip().split("(?U)\\s+");
         return parts.length == 2 && parts[0].equalsIgnoreCase("bearer") ? parts[1] : null;
     }
 

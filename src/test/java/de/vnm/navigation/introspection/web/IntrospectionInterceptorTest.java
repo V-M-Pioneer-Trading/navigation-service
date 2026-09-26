@@ -43,6 +43,22 @@ class IntrospectionInterceptorTest {
         assertThat(centerCalls).hasValue(0);
     }
 
+    /**
+     * Only Spring's own preflight handler is the CORS layer. Another handler that happens to
+     * see an OPTIONS with Origin and Access-Control-Request-Method is still undeclared.
+     */
+    @Test
+    void aPreflightShapedRequest_toAHandlerThatIsNotSpringsPreflightHandler_isNeverServed() throws Exception {
+        MockHttpServletRequest preflight = request("OPTIONS");
+        preflight.addHeader("Origin", "http://localhost:3000");
+        preflight.addHeader("Access-Control-Request-Method", "POST");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        HttpRequestHandler notTheCorsLayer = (req, res) -> {};
+
+        assertThat(interceptor.preHandle(preflight, response, notTheCorsLayer)).isFalse();
+        assertThat(response.getStatus()).isEqualTo(500);
+    }
+
     @Test
     void staticResources_ignoreCredentials_onSafeMethods() throws Exception {
         MockHttpServletRequest request = request("GET");

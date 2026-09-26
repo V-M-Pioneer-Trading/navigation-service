@@ -57,10 +57,20 @@ class BearerTest {
         assertThat(Bearer.tokenFrom(header)).isEmpty();
     }
 
-    /** A Unicode space is not a separator: the token is opaque and the center decides. */
+    /**
+     * The header is split on Unicode whitespace, as agent-service's {@code strings.Fields}
+     * and the TypeScript client's {@code /\s+/} split it. Before, only ASCII runs separated,
+     * so these read differently here than in the rest of the family.
+     */
     @ParameterizedTest
-    @ValueSource(strings = {"Bearer abc def"})
-    void unicodeSpacesAreNotSeparators(String header) {
-        assertThat(Bearer.tokenFrom(header)).contains("abc def");
+    @ValueSource(strings = {"Bearer\u000Babc", "Bearer\u00A0abc", "Bearer\u2003abc", "Bearer\u0085abc", "\u3000Bearer abc\u2028"})
+    void unicodeWhitespaceSeparatesTheSchemeFromTheToken(String header) {
+        assertThat(Bearer.tokenFrom(header)).contains("abc");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Bearer abc\u00A0def", "Bearer abc\u000Bdef", "Bearer abc\u2009def"})
+    void unicodeWhitespaceInsideTheTokenMakesAThirdPart(String header) {
+        assertThat(Bearer.tokenFrom(header)).isEmpty();
     }
 }

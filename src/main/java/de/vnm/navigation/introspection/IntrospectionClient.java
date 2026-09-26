@@ -75,26 +75,34 @@ public final class IntrospectionClient implements Introspector, AutoCloseable {
 
     @Override
     public CenterAnswer introspect(String token) {
-        HttpRequest request = HttpRequest.newBuilder(settings.endpoint())
-                .timeout(TIMEOUT)
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .header("Accept", "application/json")
-                .header(IntrospectionSettings.SECRET_HEADER, settings.secret())
-                .POST(HttpRequest.BodyPublishers.ofString(
-                        "token=" + URLEncoder.encode(token, StandardCharsets.UTF_8)))
-                .build();
-
-        CompletableFuture<HttpResponse<Optional<byte[]>>> exchange =
-                http.sendAsync(request, IntrospectionClient::cappedBody);
+        CompletableFuture<HttpResponse<Optional<byte[]>>> exchange = null;
         HttpResponse<Optional<byte[]>> response;
         try {
+            // Built inside the try: java.net.http validates headers here and its exceptions
+            // quote the offending header value. Nothing thrown may escape this method, or
+            // Spring's exception handling would log it and put it in a response body.
+            HttpRequest request = HttpRequest.newBuilder(settings.endpoint())
+                    .timeout(TIMEOUT)
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .header("Accept", "application/json")
+                    .header(IntrospectionSettings.SECRET_HEADER, settings.secret())
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                            "token=" + URLEncoder.encode(token, StandardCharsets.UTF_8)))
+                    .build();
+            exchange = http.sendAsync(request, IntrospectionClient::cappedBody);
             response = exchange.get(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             exchange.cancel(true);
             log.warn("introspection: the center did not answer within {} ms", TIMEOUT.toMillis());
             return CenterAnswer.UNAVAILABLE;
+        } catch (RuntimeException e) {
+            // The class only: a message from request building can quote the secret header.
+            log.warn("introspection: the request to the center could not be made ({})", e.getClass().getName());
+            return CenterAnswer.UNAVAILABLE;
         } catch (InterruptedException e) {
-            exchange.cancel(true);
+            if (exchange != null) {
+                exchange.cancel(true);
+            }
             Thread.currentThread().interrupt();
             log.warn("introspection: interrupted while asking the center");
             return CenterAnswer.UNAVAILABLE;

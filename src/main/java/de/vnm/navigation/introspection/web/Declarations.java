@@ -2,7 +2,7 @@ package de.vnm.navigation.introspection.web;
 
 import de.vnm.navigation.introspection.Requirement;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.boot.web.servlet.error.ErrorController;
+import org.springframework.boot.autoconfigure.web.servlet.error.BasicErrorController;
 import org.springframework.web.cors.CorsUtils;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.resource.ResourceHttpRequestHandler;
@@ -29,7 +29,7 @@ import java.util.List;
  *       <td>ignore credentials</td><td>documentation never reads identity</td></tr>
  *   <tr><td>{@link ResourceHttpRequestHandler} (Swagger UI's static files)</td>
  *       <td>ignore credentials</td><td>static files never read identity</td></tr>
- *   <tr><td>Spring Boot's {@link ErrorController}</td>
+ *   <tr><td>Spring Boot's own {@link BasicErrorController} (that class only, not any {@code ErrorController})</td>
  *       <td>ignore credentials</td><td>renders an error for a request already decided;
  *       reached directly, it answers safe methods only</td></tr>
  *   <tr><td>Spring MVC's built-in {@code OPTIONS} responder</td>
@@ -54,6 +54,15 @@ public final class Declarations {
     private static final String SPRING_OPTIONS_RESPONDER =
             "org.springframework.web.servlet.mvc.method.RequestMappingInfoHandlerMapping$HttpOptionsHandler";
 
+    /**
+     * The handler Spring MVC's CORS support substitutes for a preflight. Also private to
+     * Spring and matched by name, for the same reason: any other non-method handler that
+     * happens to see an {@code OPTIONS} with {@code Origin} is not the CORS layer and is
+     * undeclared. If Spring renames it, the preflight routing test fails with a 500.
+     */
+    private static final String SPRING_PREFLIGHT_HANDLER =
+            "org.springframework.web.servlet.handler.AbstractHandlerMapping$PreFlightHttpRequestHandler";
+
     private static final String SPRINGDOC_PACKAGE = "org.springdoc.";
 
     private static final Declaration IGNORED = new Declaration.CredentialsIgnored();
@@ -65,7 +74,7 @@ public final class Declarations {
         if (handler instanceof HandlerMethod method) {
             return of(method);
         }
-        if (CorsUtils.isPreFlightRequest(request)) {
+        if (CorsUtils.isPreFlightRequest(request) && handler.getClass().getName().equals(SPRING_PREFLIGHT_HANDLER)) {
             return IGNORED;
         }
         if (handler instanceof ResourceHttpRequestHandler) {
@@ -88,17 +97,14 @@ public final class Declarations {
         return frameworkOwned(handler.getBeanType());
     }
 
-    /** {@code true} when the handler carries one of the four annotations itself. */
-    static boolean isAnnotated(HandlerMethod handler) {
-        return !declarationsOn(handler.getMethod()).isEmpty();
-    }
-
     /**
-     * Spring Boot's error rendering answers whatever method failed, so it is mapped to every
-     * method; the audit exempts it from the safe-methods-only rule for that reason alone.
+     * Spring Boot's own error rendering answers whatever method failed, so it is mapped to
+     * every method; the audit exempts it from the safe-methods-only rule for that reason
+     * alone. Exactly {@link BasicErrorController}: an {@code ErrorController} anyone else
+     * writes is an ordinary handler and declares like one.
      */
     static boolean rendersErrors(HandlerMethod handler) {
-        return ErrorController.class.isAssignableFrom(handler.getBeanType());
+        return handler.getBeanType() == BasicErrorController.class;
     }
 
     private static List<Annotation> declarationsOn(Method method) {
@@ -133,7 +139,7 @@ public final class Declarations {
         if (beanType.getName().startsWith(SPRINGDOC_PACKAGE)) {
             return IGNORED;
         }
-        if (ErrorController.class.isAssignableFrom(beanType)) {
+        if (beanType == BasicErrorController.class) {
             return IGNORED;
         }
         if (beanType.getName().equals(SPRING_OPTIONS_RESPONDER)) {

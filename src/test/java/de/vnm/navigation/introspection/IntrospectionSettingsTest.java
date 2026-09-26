@@ -38,11 +38,11 @@ class IntrospectionSettingsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {" " + SECRET, SECRET + "\n", SECRET + "\u0000x"})
-    void refusesASecretTheWireWouldAlter(String secret) {
+    @ValueSource(strings = {" " + SECRET, SECRET + "\n", SECRET + "\u0000x", SECRET + "\u007f", SECRET + "\u00e9", SECRET + "\u0100", SECRET + "\u20ac"})
+    void refusesASecretThatIsNotPrintableAscii(String secret) {
         assertThatThrownBy(() -> IntrospectionSettings.of(URL, secret))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("AUTH_INTROSPECTION_SECRET")
+                .hasMessageContaining("AUTH_INTROSPECTION_SECRET must be printable ASCII")
                 .hasMessageNotContaining(SECRET);
     }
 

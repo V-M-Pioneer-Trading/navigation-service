@@ -42,12 +42,14 @@ public final class IntrospectionSettings {
         if (secret == null || secret.isBlank()) {
             throw new IllegalStateException(ENV_SECRET + " is required — refusing to start without it");
         }
-        if (!secret.equals(secret.strip()) || secret.chars().anyMatch(c -> c < 0x20 || c == 0x7f)) {
-            // A header value cannot carry control characters, and surrounding whitespace is
-            // stripped on the wire, so the center would see a different secret from the one
-            // configured. Refused without echoing it.
+        if (!secret.equals(secret.strip()) || secret.chars().anyMatch(c -> c < 0x20 || c > 0x7e)) {
+            // Printable ASCII only. Surrounding whitespace is stripped on the wire, so the
+            // center would see a different secret; a control character is not a header value;
+            // and java.net.http refuses anything above U+00FF with an exception whose message
+            // quotes the whole header value — the secret — on every request. Refused here,
+            // once, without echoing it.
             throw new IllegalStateException(
-                    ENV_SECRET + " must not contain surrounding whitespace or control characters");
+                    ENV_SECRET + " must be printable ASCII with no surrounding whitespace");
         }
         return new IntrospectionSettings(endpointFrom(url), secret);
     }

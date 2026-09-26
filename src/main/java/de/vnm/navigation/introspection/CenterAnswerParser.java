@@ -26,8 +26,9 @@ import java.util.Set;
  * <ul>
  *   <li>{@code active} — required, a JSON boolean. {@code "true"} and {@code 1} are not.</li>
  *   <li>{@code sub} — required when active, a non-empty string.</li>
- *   <li>{@code exp} — required when active, a JSON number. Checked for shape only: expiry is
- *       the center's decision, and a client that re-judged it would be a second verifier.</li>
+ *   <li>{@code exp} — required when active, a finite JSON number ({@code 1e400} is not).
+ *       Checked for shape only: expiry is the center's decision, and a client that
+ *       re-judged it would be a second verifier.</li>
  *   <li>{@code kind} — required when active, {@code "operator"} or {@code "machine"}; used
  *       verbatim, never re-derived from {@code sub}. agent-service and the TypeScript client
  *       refuse any other value too, so the family agrees on what a kind is.</li>
@@ -35,10 +36,10 @@ import java.util.Set;
  *       as {@code ""}. Present, it must be a string.</li>
  * </ul>
  *
- * <p>Across the whole object: a {@code null} for any contract key, a key appearing twice in
- * any spelling ({@code {"active":false,"Active":true}}), a contract key in any spelling but
- * its own, anything but a single top-level object, and trailing bytes after it are all
- * malformed. Unknown extension keys (RFC 7662 §2.2 allows them) are ignored.
+ * <p>A {@code null} is malformed wherever a rule reads the key, and nowhere else. Across the
+ * whole object: a key appearing twice in any spelling ({@code {"active":false,"Active":true}}),
+ * a contract key in any spelling but its own, anything but a single top-level object, and
+ * trailing bytes after it are all malformed. Unknown extension keys (RFC 7662 §2.2 allows them) are ignored.
  */
 public final class CenterAnswerParser {
 
@@ -89,8 +90,8 @@ public final class CenterAnswerParser {
             throw new NotTheContract("active without a non-empty string `sub`");
         }
         JsonNode exp = root.get("exp");
-        if (exp == null || !exp.isNumber()) {
-            throw new NotTheContract("active without a numeric `exp`");
+        if (exp == null || !exp.isNumber() || !Double.isFinite(exp.doubleValue())) {
+            throw new NotTheContract("active without a finite numeric `exp`");
         }
         JsonNode kind = root.get("kind");
         if (kind == null || !kind.isTextual() || !KINDS.contains(kind.textValue())) {
@@ -104,16 +105,16 @@ public final class CenterAnswerParser {
         }
 
         String scopes = scope == null ? "" : scope.textValue();
-        return new CenterAnswer.Active(new Identity(sub.textValue(), kind.textValue(), AsciiWhitespace.split(scopes)));
+        return new CenterAnswer.Active(new Identity(sub.textValue(), kind.textValue(), Fields.ascii(scopes)));
     }
 
     /**
      * Refuses a key repeated in any spelling, and a contract key in any spelling but its
      * own. A struct-binding reader matches keys case-insensitively and lets the last
      * duplicate win, so {@code {"active":false,"Active":true}} would bind {@code active=true};
-     * here it makes the whole answer unusable instead. A contract key holding JSON
-     * {@code null} is refused here too, so the rules above never have to tell "absent" from
-     * "null".
+     * here it makes the whole answer unusable instead. A JSON {@code null} is judged only
+     * where a rule reads the key, as agent-service judges it: {@code {"active":false,"sub":null}}
+     * is an inactive token, and a {@code null} {@code sub} on an active answer is malformed.
      */
     private static void checkKeySpelling(JsonNode root) throws NotTheContract {
         Set<String> seen = new HashSet<>();
@@ -126,9 +127,6 @@ public final class CenterAnswerParser {
             }
             if (CONTRACT_KEYS.contains(folded) && !key.equals(folded)) {
                 throw new NotTheContract("`" + folded + "` is not spelled in lower case");
-            }
-            if (CONTRACT_KEYS.contains(key) && member.getValue().isNull()) {
-                throw new NotTheContract("`" + key + "` is null");
             }
         }
     }
