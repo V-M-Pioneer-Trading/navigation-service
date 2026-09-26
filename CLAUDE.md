@@ -25,12 +25,13 @@ build-script change working on both.
 | File | Owns | Depends on |
 |------|------|------------|
 | `NavigationServiceApplication` | Boot entry point; registers `SqliteDirectoryInitializer` | `config` |
-| `api/WaypointController` | Waypoint and system routes; receives the verified `Session` (or null) and the raw `Authorization` header to forward | `service`, `auth.Session` |
-| `api/MarketController`, `api/ShipyardController` | Their two routes each | `service`, `auth.Session` |
-| `api/HealthController` | `/health` and `/api/navigation/health` | — |
-| `auth/ClerkVerifier` | Networkless RS256 verification; PEM parsing; claim shape | nimbus-jose-jwt |
-| `auth/ClerkAuthFilter` | The one authorization rule for `/api/navigation/v1/**`; the family error envelope; republishing the verified caller's raw `Authorization` header for relay | `auth` |
-| `auth/Session`, `auth/Scopes` | The verified identity handed to controllers; the scope literals | — |
+| `api/WaypointController` | Waypoint and system routes, each declaring its credential requirement; receives the verified `Session` (or null) and the raw `Authorization` header to forward | `service`, `auth`, `introspection.web` (annotations) |
+| `api/MarketController`, `api/ShipyardController` | Their two routes each | same |
+| `api/HealthController` | `/health` and `/api/navigation/health`, `@IgnoreCredentials` | `introspection.web` (annotation) |
+| `auth/Session`, `auth/Scopes`, `auth/CallerAttributes` | The verified identity handed to controllers (subject, the center's `kind`, scopes); the scope literals; the two request-attribute names | — |
+| `introspection/AccessPolicy`, `Requirement`, `Bearer`, `SafeMethods`, `Rejection` | The rules of token-introspection.md: rule order, what a bearer token is, the five answers. Pure | — |
+| `introspection/IntrospectionClient`, `CenterAnswerParser`, `IntrospectionSettings` | The one POST to auth-service (1 s, no retry, no cache, no redirects, 64 KiB cap); the strict reading of its answer; the two env vars | `java.net.http`, Jackson |
+| `introspection/web/*` | The Spring MVC adapter: the four declaration annotations, `Declarations` (the one place a handler's declaration is read, framework-owned handlers included), `IntrospectionInterceptor` (enforcement and the family envelope), `DeclarationAudit` (refuses to start with an undeclared handler) | `introspection`, `auth` |
 | `client/SpaceTradersClient` | Every outbound HTTP call, pagination, forwarding the caller's `Authorization` header, and the relay of st-gateway's status, message and pacing headers | `exception` |
 | `service/WaypointService` | Waypoint and system-listing cache logic, transactions | `client`, `repository`, `model` |
 | `service/CachedResourceService` | The shared cache-then-fetch sequence for symbol-keyed resources | `client`, `repository`, `model` |
@@ -43,29 +44,33 @@ build-script change working on both.
 | `repository/SystemCacheRepository` | The `system_fetches` marker table | — |
 | `exception/ApiException`, `GlobalExceptionHandler` | Deliberate HTTP statuses; RFC 9457 rendering | — |
 | `config/CorsConfig` | Browser access to `/api/**` | — |
-| `config/ClerkConfig` | Wires the trust anchor from `CLERK_JWT_KEY` / `_FILE`; refuses to start without one | `auth` |
+| `config/IntrospectionConfig` | Wires the client from `AUTH_INTROSPECTION_URL` / `_SECRET` (refuses to start without either), installs the interceptor on every path, registers the audit. A `WebMvcConfigurer`, so every `@WebMvcTest` slice gets it | `introspection` |
 | `config/SqliteDirectoryInitializer` | Creating the database directory before the pool opens | — |
 
 ### Dependency rules
 
 - Layering is `api → service → {client, repository} → model/exception`. Never the reverse.
-  `auth` sits beside `api`: the filter runs before any controller, and `auth.Session` is the
-  only auth type `service` may import.
+  `auth` sits beside `api`: the introspection interceptor runs before any controller, and
+  `auth.Session` is the only auth type `service` may import. `introspection` (the rules and
+  the client) imports nothing from the rest of the service; only `introspection.web` knows
+  `auth`, to publish the `Session`.
 - **No controller calls another controller, and no service calls another service.** Both
   happened before (`MarketController` used a static on `WaypointController`; `MarketService`
   used statics on `WaypointService`). Shared behaviour goes in `Symbols`, `LiveFetch`,
   `CachedJson`, or `CachedResourceService`.
 - `client` must not import from `api` or `auth`. `SpaceTradersClient` forwards exactly one
   credential, the caller's verified Clerk session, relayed byte for byte on `Authorization`
-  so st-gateway can derive the queue lane from an identity it verifies itself (auth-design.md
-  decision 2). It arrives as a plain `String` — the raw header the filter published — because
+  so st-gateway can derive the queue lane from an identity it establishes itself (auth-design.md
+  decision 2). It arrives as a plain `String` — the raw header the interceptor published — because
   the layering rule forbids a `Session` here and because the bytes are the whole point.
   It sends **no game token and no priority hint**: st-gateway injects the agent token
   (decision 5), and `X-Priority` was deleted because a caller-declared class lets anything
   promote itself. Adding either of *those* two headers back is a regression. So is the
   opposite mistake, which this service actually made: verifying the session and then
   forwarding nothing, which silently drops every call into the background lane.
-- Only `client` performs HTTP. Only `repository` writes SQL.
+- Only `client` performs HTTP — plus `introspection.IntrospectionClient`, the one call to
+  auth-service, which is how this service learns who is calling rather than an upstream it
+  relays. Only `repository` writes SQL.
 
 ## Invariants
 
@@ -101,28 +106,48 @@ Each of these is stated so a violation is visible in a diff:
    `Symbols`.
 9. **A cached row can never wedge a resource permanently.** An unreadable `fetched_at`
    reads as stale; a corrupt blob is a 500 that `forceRefresh` clears.
-10. **A presented token that does not verify is a 401, never anonymous.** Downgrading a bad
-   credential to "no credential" would let an expired session read the cache silently and
-   hide a misconfigured trust anchor. Only a *missing* `Authorization` header is anonymous.
+10. **A presented token that does not verify is a 401, never anonymous — and a token that
+    could not be checked is a 503, never anonymous either.** Downgrading a bad credential to
+    "no credential" would let an expired session read the cache silently and hide a
+    misconfigured center. Only a *missing* (or not-exactly-`Bearer <token>`) `Authorization`
+    header is anonymous, and only on a route that declared `@AllowPublic`.
 11. **A zero TTL disables caching outright.** It is an explicit branch, never a consequence
     of the timestamp comparison — a row stamped at or after "now" must not read as a hit on
     a service configured not to cache.
 12. **Every outbound call carries the caller's `Authorization` header unchanged, or none at
-    all.** `ClerkAuthFilter` republishes the raw header as
-    `CALLER_AUTHORIZATION_ATTRIBUTE` only on the path where verification succeeded, and it
+    all.** `IntrospectionInterceptor` republishes the raw header as
+    `CALLER_AUTHORIZATION_ATTRIBUTE` only on the path where auth-service vouched for it, and it
     is threaded explicitly from controller to service to client — never reconstructed,
     never substituted, never read from ambient request state. An anonymous caller has
     nothing to forward and the call goes out bare; that is correct, and lands in the
     background lane. The failure mode this guards is invisible at runtime: st-gateway
     answers a lane-less call perfectly well, just slowly and behind the autopilot.
+13. **Every handler declares exactly one credential requirement, on the handler method.**
+    `@AllowPublic`, `@RequireSession`, `@RequireScope("…")` or `@IgnoreCredentials`.
+    `DeclarationAudit` refuses to start the application otherwise, and refuses
+    `@AllowPublic` / `@IgnoreCredentials` on a mutating method. "Undeclared" is never read
+    as "public" — at request time it is `500 this route declares no required scope`. There
+    is no path-prefix guard to forget to extend: the declaration travels with the handler.
+14. **This service never parses, decodes or caches a token.** It sends the bytes to
+    auth-service once per request — no retry, no cache — and acts on the answer. A token or
+    the introspection secret in a log line, a URL or a response body is a bug.
 
 ## Critical sequences
 
 **Startup, in order.** `SqliteDirectoryInitializer` runs on
 `ApplicationEnvironmentPreparedEvent` → Hikari opens the single connection → Spring runs
 `schema.sql` (`spring.sql.init.mode=always`, all `CREATE TABLE IF NOT EXISTS`) → beans
-start. The initializer is registered in `main`, not as a `@Bean`, precisely because bean
-creation is already too late.
+start (`IntrospectionConfig` refuses here without `AUTH_INTROSPECTION_URL` /
+`_SECRET`) → once every singleton exists, `DeclarationAudit` walks every handler mapping
+and refuses to start if one is undeclared. The initializer is registered in `main`, not as
+a `@Bean`, precisely because bean creation is already too late.
+
+**One request, in order.** Spring matches the handler → CORS (a preflight ends here) →
+`IntrospectionInterceptor` reads the matched handler's declaration → default-deny for a
+mutating method on a route declaring no scope (before the header is read) → no bearer
+credential: visitor or `401` → one call to auth-service → `401` / `403` / `503` or
+`Session` + raw header published → controller. Error and async dispatches skip the
+interceptor; they continue a request already decided.
 
 **System refresh, in order and inside one transaction.** fetch every page → map all nodes
 to entities → `deleteBySystemSymbol` → `upsert` each → `markComplete`. Reordering any of
@@ -140,7 +165,8 @@ Changing any of these breaks a consumer:
 |------------|----------------|
 | `Authorization: Bearer <Clerk JWT>` on reads (optional) and refreshes (required, `universe:refresh`) | command-interface, automation-service |
 | That same header being relayed verbatim to st-gateway | st-gateway's `interactive`/`background` lane assignment — the dashboard's responsiveness depends on it |
-| The `{"error":{"message":…}}` auth envelope and its three messages | command-interface's shared error parser; must stay byte-identical to fleet-service's |
+| The `{"error":{"message":…}}` auth envelope and its five sentences | command-interface's shared error parser, automation-service's failure classifier; byte-identical across the fleet and pinned by `meta/fixtures/introspection.json` |
+| `AUTH_INTROSPECTION_URL` (full endpoint URL) and `AUTH_INTROSPECTION_SECRET` | The infrastructure stack; the image refuses to start without them |
 | Route prefix `/api/navigation/v1` | CloudFront path routing |
 | `/health` **and** `/api/navigation/health` | Local compose probes and the production health check respectively — both mounts are load-bearing |
 | `{"data": [...], "total": n}` listing envelope | command-interface's system map |
@@ -162,27 +188,33 @@ Changing any of these breaks a consumer:
 
 ## Testing harness
 
-Six levels, deliberately:
+Eight levels, deliberately:
 
 | Level | Example | What it is for |
 |-------|---------|----------------|
-| Plain unit | `SymbolsTest` | Pure logic. |
+| Plain unit | `SymbolsTest`, `BearerTest`, `CenterAnswerParserTest` | Pure logic. The parser test is where every strictness rule of the center's answer lives. |
 | Mockito service | `WaypointServiceTest` | Cache decisions with repository and client mocked. |
 | `MockRestServiceServer` | `SpaceTradersClientTest` | The wire: request shape, pagination, status mapping. Only this and the conformance test below exercise the client; every other test mocks it. |
-| Vendored fixtures | `GatewayErrorConformanceTest` | The shared upstream-error contract, one generated test per condition. The cases in `src/test/resources/gateway-errors.json` are a verbatim copy of `meta/fixtures/gateway-errors.json` — **change meta first, then re-copy**, or the copy is just a local opinion. |
-| `@WebMvcTest` + real filter | `ClerkAuthFilterTest` | The authorization rule end to end with a per-run keypair (`auth/TestClerk`). No stub verifier. |
-| `@SpringBootTest` + real SQLite | `NavigationCacheIntegrationTest` | Schema, SQL, transactions. The only level that can catch a rollback bug. |
+| Vendored fixtures | `GatewayErrorConformanceTest`, `IntrospectionConformanceTest` | The shared contracts, one generated test per condition. `src/test/resources/gateway-errors.json` and `src/test/resources/introspection/introspection.json` are verbatim copies of meta's fixtures — **change meta first, then re-copy**, or the copy is just a local opinion. The introspection copy is pinned by sha256 (`SOURCE.txt`, `.gitattributes -text`); its 37 calling-service cases run through the real interceptor and the real HTTP client against a `StubCenter`, and an unknown key fails the case. |
+| Real HTTP stub of auth-service | `IntrospectionClientTest` | The introspection wire: body cap, redirects, encoding. `StubCenter` is the JDK's `com.sun.net.httpserver`. |
+| `@WebMvcTest` + real interceptor | `RouteAuthorizationTest`, `AdapterRoutingTest` | This service's declarations on its real routes, and how Spring's routing (HEAD, OPTIONS, preflight, trailing slash, case, parameters) binds them. Against `TestCenter`, a shared `StubCenter` with a table of test tokens. No stub verifier, no signed tokens. |
+| Context runner | `DeclarationAuditTest` | The startup refusal: an undeclared handler, a public mutation, a missing env var. |
+| `@SpringBootTest` + real SQLite | `NavigationCacheIntegrationTest`, `ServedApplicationAuthorizationTest` | Schema, SQL, transactions — the only level that can catch a rollback bug; and the whole app on a real port for what only Tomcat shows (error dispatch, HEAD, repeated header lines). |
 
 Notes that will save time:
 
 - Use `@MockitoBean` / `@MockitoSpyBean` (Spring Framework 6.2), **not** the removal-marked
   `@MockBean`.
-- Every `@WebMvcTest` must `@Import(ClerkConfig.class)` — the slice does not scan plain
-  `@Configuration`, and without it the filter silently does not run and every auth
-  assertion passes vacuously. Every web slice *and* the `@SpringBootTest` must register
-  `clerk.jwt-key` via `@DynamicPropertySource` from `TestClerk::publicKeyPem`, or the
-  context refuses to start. `TestClerk.OPERATOR` is the exact `Session` `TestClerk.bearer()`
-  verifies to, so service mocks can match on it by equality.
+- `IntrospectionConfig` is a `WebMvcConfigurer`, so every `@WebMvcTest` slice runs the real
+  interceptor without an `@Import` — the old trap of a slice silently running without the
+  guard is gone. The price is that every web slice *and* every `@SpringBootTest` must point
+  `auth.introspection.*` at a center with `TestCenter.register(registry)` in a
+  `@DynamicPropertySource`, or the context refuses to start. `TestCenter.OPERATOR` is the
+  exact `Session` `TestCenter.OPERATOR_BEARER` is published as, so service mocks can match
+  on it by equality. Reset its call counter in `@BeforeEach` before asserting on it.
+- A probe controller in a test (a `@RestController` nested in the test class) must be
+  `@Import`ed, and must itself be fully declared — the startup audit runs in slices too.
+- The fixture's `center-times-out` case really waits the 1 s client timeout.
 - The integration test creates its own temp SQLite file in a static initializer rather than
   with `@TempDir`. `@DynamicPropertySource` runs at context creation, and JUnit's `@TempDir`
   extension is not guaranteed to have run by then — the static initializer removes the
@@ -208,8 +240,8 @@ Notes that will save time:
 - **`MockRestServiceServer` expectations are ordered.** A pagination test must declare
   `page=1` before `page=2`, and the full URL including query string has to match.
 
-No flaky test is currently known. The suite was at 117 tests when this file was last
-updated.
+No flaky test is currently known. The suite was at 319 tests (11 of them the skipped
+st-gateway fixture cases) when this file was last updated.
 
 ## Extension conventions
 
@@ -224,9 +256,22 @@ updated.
 - **A new header**: add it to `CorsConfig`'s allow-list. A header that is not allow-listed
   silently fails in the browser only. Think twice: the last two custom headers were both
   deleted as pass-through.
+- **A new route**: put exactly one declaration on the handler method — `@AllowPublic` for a
+  read whose answer may depend on an optional identity, `@RequireScope(Scopes.X)` for
+  anything that spends or changes something, `@RequireSession` for "signed in, nothing
+  more", `@IgnoreCredentials` only for health-and-docs-shaped routes that never read
+  identity. The application will not start without it. Add a line to the README's route
+  table and a `RouteAuthorizationTest` case.
+- **A new framework-owned handler** (a library contributing its own controller): declare it
+  by type in `introspection/web/Declarations`, with the reason, and cover it in
+  `ServedApplicationAuthorizationTest`. Never widen a rule to "anything not ours is public".
 - **A new scope**: add the literal to `auth/Scopes`, to `meta/scripts/mint-dev-token.mjs`'s
   defaults, to command-interface's `useOperator.js`, and to the operator's Clerk
   `public_metadata`; record it as a decision in `meta/docs/design/auth-design.md`.
+- **Re-vendoring the introspection fixture**: change meta first; copy the file byte for
+  byte; update the commit and sha256 in `SOURCE.txt` and the pinned hash, size and case
+  names in `IntrospectionConformanceTest`. A new assertion key fails the suite until the
+  harness learns to honour it — that is the point.
 - **A new config value**: put it in `application.properties` with an env-var default, add
   it to the README table, and validate it where it is injected — see
   `CachedResourceService`'s TTL check.
