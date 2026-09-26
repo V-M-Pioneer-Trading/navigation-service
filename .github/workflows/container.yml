@@ -139,9 +139,9 @@ jobs:
           platforms: linux/arm64
           push: true
           # Layer cache in the Actions cache: layers whose inputs did not change
-          # are reused. The Dockerfile copies src before running Gradle, so a
-          # code change still re-downloads the dependencies; splitting that out
-          # is a Dockerfile change of its own. ignore-error: a cache export
+          # are reused. The Gradle dependencies have a layer of their own (see
+          # the Dockerfile), so a code-only change skips the download.
+          # ignore-error: a cache export
           # hiccup must not fail the build after the image and :latest are
           # already pushed, which would skip the redeploy and leave :latest
           # ahead of prod.
