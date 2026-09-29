@@ -27,6 +27,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.List;
@@ -43,7 +44,7 @@ import static org.assertj.core.api.Assertions.fail;
  * Conformance against {@code meta/fixtures/introspection.json}, vendored verbatim into
  * {@code src/test/resources/introspection/} (provenance and sha256 in {@code SOURCE.txt}).
  *
- * <p>Every one of the 37 calling-service cases is driven through the real
+ * <p>Every one of the 40 calling-service cases is driven through the real
  * {@link IntrospectionInterceptor} and the real {@link IntrospectionClient} against a real
  * HTTP stub of the center implementing the case's {@code center} object: {@code status},
  * {@code body}, {@code delayMs}, {@code notCalled}, and {@code transport: "no-response"} (a
@@ -59,7 +60,7 @@ import static org.assertj.core.api.Assertions.fail;
  * How Spring binds a declaration to a real route is the adapter's own obligation, tested in
  * {@code AdapterRoutingTest}.
  *
- * <p>The 11 st-gateway cases are a different policy (a lane, never a verdict) that this
+ * <p>The 12 st-gateway cases are a different policy (a lane, never a verdict) that this
  * service does not implement. They are skipped by name, and their count is asserted, so a
  * gateway case added in meta is noticed here too.
  */
@@ -68,7 +69,7 @@ class IntrospectionConformanceTest {
 
     private static final String FIXTURE = "/introspection/introspection.json";
     private static final String SOURCE = "/introspection/SOURCE.txt";
-    private static final String PINNED_SHA256 = "77f845c89d4baabef7a336325a9e30360d908fd761ad450904c693621547dfa3";
+    private static final String PINNED_SHA256 = "5fe6d77e1113c05af899e554db0723a06cf42c197f9eb46a8b93b2f3c682201c";
 
     /** Stands in for {@code <AUTH_INTROSPECTION_SECRET>} in the fixture. */
     private static final String SECRET = "conformance-caller-secret-7f3a9c";
@@ -94,7 +95,7 @@ class IntrospectionConformanceTest {
         Matcher recorded = Pattern.compile("(?m)^\\s*sha256:\\s*([0-9a-f]{64})\\s*$").matcher(source);
         assertThat(recorded.find()).as("SOURCE.txt records a sha256").isTrue();
         assertThat(recorded.group(1))
-                .as("SOURCE.txt; this test was written against meta 9b62746 (fixture version 3)")
+                .as("SOURCE.txt; this test was written against meta 46c033e (fixture version 4)")
                 .isEqualTo(PINNED_SHA256);
 
         String actual = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(raw));
@@ -106,8 +107,8 @@ class IntrospectionConformanceTest {
                     : "introspection.json hashes to " + actual + ", SOURCE.txt records " + PINNED_SHA256
                       + " — re-copy it from meta and update BOTH the commit and the sha256 in SOURCE.txt");
         }
-        assertThat(raw).hasSize(49347);
-        assertThat(fixture().path("version").asInt()).as("fixture version").isEqualTo(3);
+        assertThat(raw).hasSize(53749);
+        assertThat(fixture().path("version").asInt()).as("fixture version").isEqualTo(4);
     }
 
     @Test
@@ -124,7 +125,7 @@ class IntrospectionConformanceTest {
                 "gateway-active-machine", "gateway-active-operator", "gateway-active-operator-lacking-scope-key",
                 "gateway-bearer-with-empty-token", "gateway-center-rejects-our-caller-secret",
                 "gateway-center-unreachable", "gateway-inactive-token", "gateway-kind-machine-with-user-subject",
-                "gateway-kind-operator-with-machine-subject", "gateway-no-header", "gateway-non-bearer-scheme",
+                "gateway-kind-operator-with-machine-subject", "gateway-no-header", "gateway-non-bearer-scheme", "gateway-two-authorization-lines",
                 "head-on-guarded-route-with-no-header", "head-on-guarded-route-with-valid-token", "head-on-public-get",
                 "inactive-token-on-guarded-route", "inactive-token-on-public-get", "kind-disagrees-with-sub-prefix",
                 "lowercase-bearer-scheme", "lowercase-route-method", "mutating-route-with-no-declared-scope",
@@ -134,7 +135,8 @@ class IntrospectionConformanceTest {
                 "options-on-guarded-route-with-no-header", "options-with-no-declared-scope",
                 "scoped-route-with-token-lacking-scope-key", "session-route-with-inactive-token",
                 "session-route-with-no-header", "session-route-with-scopeless-token",
-                "session-route-with-token-lacking-scope-key", "token-on-public-get-while-center-is-down",
+                "session-route-with-token-lacking-scope-key", "token-on-public-get-while-center-is-down", "two-authorization-lines",
+                "two-authorization-lines-on-public-get", "two-authorization-lines-second-empty",
                 "visitor-on-public-get");
     }
 
@@ -162,12 +164,12 @@ class IntrospectionConformanceTest {
         assertThat(messages.path("centerUnavailable").asText()).isEqualTo(Rejection.CENTER_UNAVAILABLE.message());
     }
 
-    // ── the 37 calling-service cases ───────────────────────────────────────────────────
+    // ── the 40 calling-service cases ───────────────────────────────────────────────────
 
     @TestFactory
     Stream<DynamicTest> callingServiceCases(CapturedOutput output) throws Exception {
         JsonNode cases = fixture().path("cases");
-        assertThat(cases.size()).as("calling-service cases; this test was written against 37").isEqualTo(37);
+        assertThat(cases.size()).as("calling-service cases; this test was written against 40").isEqualTo(40);
         String endpointPath = fixture().at("/contract/endpoint/path").asText();
 
         List<DynamicTest> tests = new ArrayList<>();
@@ -184,7 +186,7 @@ class IntrospectionConformanceTest {
     @TestFactory
     Stream<DynamicTest> gatewayCasesAreNotThisServicesPolicy() throws Exception {
         JsonNode gatewayCases = fixture().path("gatewayCases");
-        assertThat(gatewayCases.size()).as("gateway cases; this test was written against 11").isEqualTo(11);
+        assertThat(gatewayCases.size()).as("gateway cases; this test was written against 12").isEqualTo(12);
 
         List<DynamicTest> tests = new ArrayList<>();
         for (JsonNode c : gatewayCases) {
@@ -206,8 +208,9 @@ class IntrospectionConformanceTest {
 
         String method = required(c, "/route/method").asText();
         String requires = required(c, "/route/requires").asText();
-        JsonNode authorizationNode = required(c, "/request/authorization");
-        String authorization = authorizationNode.isNull() ? null : authorizationNode.asText();
+        List<String> lines = authorizationLines(required(c, "/request/authorization"));
+        // The credential the client can act on: only a single line can be one. Several lines are no credential.
+        String authorization = lines.size() == 1 ? lines.get(0) : null;
         JsonNode expect = c.path("expect");
         int logStart = output.getAll().length();
 
@@ -216,9 +219,12 @@ class IntrospectionConformanceTest {
 
             IntrospectionInterceptor interceptor = new IntrospectionInterceptor(new AccessPolicy(client));
             MockHttpServletRequest request = new MockHttpServletRequest(method, "/route-under-test");
-            if (authorization != null) {
-                request.addHeader("Authorization", authorization);
+            // One addHeader per element: the servlet request then holds separate raw header lines, as Tomcat does,
+            // and getHeaders("Authorization") returns each of them. A single string is one line, null none.
+            for (String line : lines) {
+                request.addHeader("Authorization", line);
             }
+            assertThat(Collections.list(request.getHeaders("Authorization"))).as("lines as sent").isEqualTo(lines);
             MockHttpServletResponse response = new MockHttpServletResponse();
 
             long started = System.nanoTime();
@@ -247,6 +253,7 @@ class IntrospectionConformanceTest {
             String body = response.getContentAsString();
             assertThat(logs).as("log").doesNotContain(SECRET);
             assertThat(body).as("response body").doesNotContain(SECRET);
+            // Several lines are no credential, so there is no token to leak (and "a" would match any word).
             String token = tokenOf(authorization);
             if (token != null && !token.isEmpty()) {
                 assertThat(logs).as("log").doesNotContain(token);
@@ -372,6 +379,29 @@ class IntrospectionConformanceTest {
      * Unicode whitespace (the regex engine's, not {@code Fields}), so a header the code
      * splits into two parts yields a token here too and the leak assertions check it.
      */
+    /**
+     * {@code request.authorization} as the raw header lines to send: null is none, a string is one
+     * line, an array of two or more strings is that many lines in order ({@code ""} an empty line).
+     * Any other shape fails the case; it is never skipped or guessed at.
+     */
+    private static List<String> authorizationLines(JsonNode node) {
+        if (node.isNull()) {
+            return List.of();
+        }
+        if (node.isTextual()) {
+            return List.of(node.asText());
+        }
+        assertThat(node.isArray()).as("request.authorization is null, a string or an array, not %s", node).isTrue();
+        assertThat(node.size()).as("an authorization array has two or more lines (a single line is a string): %s", node)
+                .isGreaterThanOrEqualTo(2);
+        List<String> lines = new ArrayList<>();
+        for (JsonNode line : node) {
+            assertThat(line.isTextual()).as("every authorization line is a string, not %s", line).isTrue();
+            lines.add(line.asText());
+        }
+        return lines;
+    }
+
     private static String tokenOf(String authorization) {
         if (authorization == null) {
             return null;
