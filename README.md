@@ -230,8 +230,8 @@ fetches answer `504`.
 
 Without either introspection variable the service refuses to start, naming the one that
 is missing; there is no auth-optional mode. `CLERK_JWT_KEY`, `CLERK_JWT_KEY_FILE` and
-`CLERK_ISSUER` are no longer read — a deployment may keep setting them (the stack does,
-for rollback, until meta#80 step 10) and they change nothing.
+`CLERK_ISSUER` are no longer read and, since meta#80 step 10, are no longer set by the
+stack or by compose; a value that is still present is ignored.
 
 Locally, point it at a running auth-service, e.g.
 `AUTH_INTROSPECTION_URL=http://localhost:3005/auth/v1/introspect` and the secret your
