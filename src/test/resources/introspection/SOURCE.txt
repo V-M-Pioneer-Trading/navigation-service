@@ -2,8 +2,8 @@ introspection.json in this directory is a VERBATIM copy. Do not edit it here.
 
   original: meta/fixtures/introspection.json
             (V-M-Pioneer-Trading/meta, repo root `fixtures/introspection.json`)
-  meta commit: 46c033e3101dad46c0336e7d3cd74642a62248ab (2026-09-26, fixture version 4, meta#91)
-  sha256: 5fe6d77e1113c05af899e554db0723a06cf42c197f9eb46a8b93b2f3c682201c
+  meta commit: aa877e734f40078aca91b7f9b85e7502cd5916be (2026-09-30, fixture version 5, meta#94)
+  sha256: ffbb7aa932d8d8523da125a0ff9a93f1fd771d5a32841d7e03ee25ec7b1315b7
 
 The sha256 above is the hash of the LF bytes of introspection.json and is
 asserted by IntrospectionConformanceTest, so the pin enforces itself instead of
@@ -15,9 +15,9 @@ The provenance lives in this sibling file rather than as a key inside the JSON
 so the copy stays byte-identical to the original and `diff` is the drift check.
 Change meta first, then re-copy and update the commit and the sha256 above.
 
-navigation-service is a CALLING SERVICE. All 40 `cases` bind it and are driven
+navigation-service is a CALLING SERVICE. All 41 `cases` bind it and are driven
 by IntrospectionConformanceTest through the real HandlerInterceptor and the
 real java.net.http client against a real stub of the center (the JDK's
-com.sun.net.httpserver). The 12 `gatewayCases` are st-gateway's lane policy,
+com.sun.net.httpserver). The 13 `gatewayCases` are st-gateway's lane policy,
 which this service does not implement; the test skips them by name and asserts
-there are exactly 12, so a gateway case added in meta is noticed here too.
+there are exactly 13, so a gateway case added in meta is noticed here too.
