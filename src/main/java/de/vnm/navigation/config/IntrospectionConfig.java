@@ -25,8 +25,8 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  * containing {@code ${nope}} failed startup with an exception message quoting the whole
  * secret, and one containing {@code ${SERVER_PORT}} started with a silently different
  * secret. Either variable empty refuses to start; there is no auth-optional mode. The
- * {@code CLERK_*} variables the deployment may still carry until meta#80 step 10 are read by
- * nothing.
+ * {@code CLERK_*} variables are neither read nor set anywhere since meta#80 step 10
+ * (infrastructure#92); a stray value is ignored.
  *
  * <p>A {@link WebMvcConfigurer} on purpose: {@code @WebMvcTest} slices include every
  * {@code WebMvcConfigurer}, so no controller test can run without the guard in front of it.

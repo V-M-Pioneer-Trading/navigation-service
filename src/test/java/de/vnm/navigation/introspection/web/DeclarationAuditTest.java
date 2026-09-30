@@ -162,8 +162,8 @@ class DeclarationAuditTest {
     }
 
     /**
-     * The Clerk variables the deployment keeps for rollback until meta#80 step 10 are not a
-     * way back to local verification: nothing reads them, so they neither satisfy the
+     * Since meta#80 step 10 nothing sets the Clerk variables; a stray value is not a way
+     * back to local verification: nothing reads them, so they neither satisfy the
      * requirement nor break a correctly configured start.
      */
     @Test
