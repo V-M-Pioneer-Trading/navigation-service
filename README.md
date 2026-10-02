@@ -343,7 +343,7 @@ so the contract can be read, diffed and consumed without running the service.
 ```
 
 regenerates it: the whole application context through MockMvc, with a throwaway SQLite
-file and the test stub of auth-service, so no port, no network and no real database. The
+file and the test stub of auth-service, so no external network and no real database (the stub binds a loopback port). The
 output is the same bytes on Windows and Linux: keys sorted
 (`springdoc.writer-with-order-by-keys`), tags sorted and the server pinned to `/`
 (`OpenApiConfig`), LF line endings with a trailing newline (`.gitattributes` keeps a

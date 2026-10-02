@@ -43,8 +43,8 @@ tasks.test {
 }
 
 // Regenerates openapi.json in the repository root from the whole application context,
-// through MockMvc, with a throwaway SQLite file and the stub auth-service: no port, no
-// network. CI runs it and fails on any diff, so commit the result with the change behind it.
+// through MockMvc, with a throwaway SQLite file and the stub auth-service on a loopback port: no
+// external network. CI runs it and fails on any diff, so commit the result with the change behind it.
 tasks.register<Test>("openapi") {
     description = "Regenerates openapi.json from the application context."
     group = "documentation"

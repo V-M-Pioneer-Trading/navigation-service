@@ -26,7 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Writes {@code openapi.json} in the repository root from the whole application context,
- * through MockMvc: no port, no network, a throwaway SQLite file, and the stub auth-service
+ * through MockMvc: no external network (the stub auth-service binds a loopback port), a throwaway SQLite file, and the stub auth-service
  * every web test uses (the startup route audit runs exactly as in production).
  *
  * <p>Not a test of anything. It is tagged {@code openapi}, which {@code ./gradlew test}
