@@ -57,6 +57,23 @@ jobs:
 
       - run: ./gradlew test
 
+      # openapi.json is committed (meta#26). A controller or annotation change that
+      # moves the spec must commit the regenerated file in the same PR.
+      - name: Check openapi.json is up to date
+        run: |
+          # git diff sees nothing in an untracked file, so a spec that was never
+          # committed would pass vacuously.
+          git ls-files --error-unmatch openapi.json > /dev/null
+          # Delete it first: Gradle succeeds when the tag filter matches no
+          # test, so a disabled or mistagged writer would leave the old file in
+          # place and pass. Deleted, a writer that never ran shows as a diff.
+          rm openapi.json
+          ./gradlew openapi
+          if ! git diff --exit-code -- openapi.json; then
+            echo "::error file=openapi.json::openapi.json is out of date. Run ./gradlew openapi and commit the result."
+            exit 1
+          fi
+
   docker:
     # A push to main or a tag, or a manual dispatch on main; never a pull
     # request, and no image built from a dispatch on another branch.

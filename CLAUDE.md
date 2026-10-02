@@ -10,6 +10,7 @@ Working notes for changing this service. Behaviour and rationale live in
 | `./gradlew test` | Full suite. This is also the typecheck — Java has no separate one. |
 | `./gradlew test --tests "de.vnm.navigation.client.*"` | One package or class. |
 | `./gradlew build` | Compile, test, and produce `build/libs/navigation-service-<version>.jar`. |
+| `./gradlew openapi` | Regenerate the committed `openapi.json` (CI fails on any diff). Not part of `test`. |
 | `./gradlew bootRun` | Run locally on 8080 against `ST_GATEWAY_URL`. |
 | `java -jar build/libs/navigation-service-0.0.1.jar` | Run the packaged artifact. |
 | `docker build -t navigation-service .` | Same multi-stage build CI uses. |
@@ -46,6 +47,7 @@ build-script change working on both.
 | `config/CorsConfig` | Browser access to `/api/**` | — |
 | `config/IntrospectionConfig` | Wires the client from `AUTH_INTROSPECTION_URL` / `_SECRET` (refuses to start without either), installs the interceptor on every path, registers the audit. A `WebMvcConfigurer`, so every `@WebMvcTest` slice gets it | `introspection` |
 | `config/SqliteDirectoryInitializer` | Creating the database directory before the pool opens | — |
+| `config/OpenApiConfig` | The spec's info, its one server (`/`), and sorted tags, so `openapi.json` is reproducible | springdoc |
 
 ### Dependency rules
 
@@ -172,7 +174,7 @@ Changing any of these breaks a consumer:
 | `/health` **and** `/api/navigation/health` | Local compose probes and the production health check respectively — both mounts are load-bearing |
 | `{"data": [...], "total": n}` listing envelope | command-interface's system map |
 | Single-resource responses being the raw SpaceTraders object | every consumer; do not add a wrapper |
-| `/api-docs` OpenAPI 3.1 output | MCP client generation |
+| `/api-docs` OpenAPI 3.0.1 output, committed as `openapi.json` | MCP client generation; meta's `openapi/navigation-service.json` |
 
 ## Domain and upstream facts
 
@@ -262,7 +264,8 @@ st-gateway fixture cases) when this file was last updated.
   anything that spends or changes something, `@RequireSession` for "signed in, nothing
   more", `@IgnoreCredentials` only for health-and-docs-shaped routes that never read
   identity. The application will not start without it. Add a line to the README's route
-  table and a `RouteAuthorizationTest` case.
+  table and a `RouteAuthorizationTest` case, and run `./gradlew openapi` (any route or
+  `@Operation` change moves the committed spec; CI fails until it is regenerated).
 - **A new framework-owned handler** (a library contributing its own controller): declare it
   by type in `introspection/web/Declarations`, with the reason, and cover it in
   `ServedApplicationAuthorizationTest`. Never widen a rule to "anything not ours is public".

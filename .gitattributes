@@ -2,3 +2,7 @@
 # src/test/resources/introspection/SOURCE.txt). `-text` keeps a Windows checkout
 # (core.autocrlf=true) byte-identical to a Linux one, so the hash holds on both.
 src/test/resources/introspection/introspection.json -text
+# openapi.json is generated with LF endings (./gradlew openapi) and checked by CI with
+# git diff. eol=lf keeps a Windows checkout (core.autocrlf=true) byte-identical to what
+# the generator writes, so regenerating there never shows a whole-file line-ending change.
+openapi.json text eol=lf
