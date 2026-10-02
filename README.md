@@ -267,7 +267,8 @@ docker run -d --name navigation-service --restart unless-stopped \
 
 ## API
 
-Interactive docs at `GET /swagger-ui.html`, spec at `GET /api-docs`.
+Interactive docs at `GET /swagger-ui.html`, spec at `GET /api-docs`. The same spec is
+committed as [`openapi.json`](openapi.json); see [OpenAPI spec](#openapi-spec).
 
 | Method | Path                                                  | Description                                    |
 |--------|-------------------------------------------------------|------------------------------------------------|
@@ -331,6 +332,27 @@ your session — or relayed, meaning the agent token st-gateway injects was reje
 message says which. The rule and its conformance cases are
 [specified in meta](https://github.com/V-M-Pioneer-Trading/meta/blob/main/docs/design/upstream-errors.md)
 and driven from a vendored copy of its fixtures.
+
+### OpenAPI spec
+
+[`openapi.json`](openapi.json) is the OpenAPI 3.0.1 document `/api-docs` serves, committed
+so the contract can be read, diffed and consumed without running the service.
+
+```bash
+./gradlew openapi
+```
+
+regenerates it: the whole application context through MockMvc, with a throwaway SQLite
+file and the test stub of auth-service, so no port, no network and no real database. The
+output is the same bytes on Windows and Linux: keys sorted
+(`springdoc.writer-with-order-by-keys`), tags sorted and the server pinned to `/`
+(`OpenApiConfig`), LF line endings with a trailing newline (`.gitattributes` keeps a
+Windows checkout LF too).
+
+CI's `test` job regenerates it on every pull request and push and fails if
+`git diff openapi.json` shows anything, so a change to a route or an annotation commits
+the regenerated file in the same PR. Pushes to main will also sync it to meta's
+`openapi/navigation-service.json` (meta#26, a later PR).
 
 ---
 

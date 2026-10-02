@@ -1,0 +1,569 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "description": "Read-through cache for SpaceTraders waypoint, market and shipyard data",
+    "title": "navigation-service",
+    "version": "v1"
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "description": "Market lookup and cache management",
+      "name": "Market"
+    },
+    {
+      "description": "Shipyard lookup and cache management",
+      "name": "Shipyard"
+    },
+    {
+      "description": "Waypoint lookup and cache management",
+      "name": "Waypoints"
+    }
+  ],
+  "paths": {
+    "/api/navigation/health": {
+      "get": {
+        "operationId": "health_1",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "health-controller"
+        ]
+      }
+    },
+    "/api/navigation/v1/systems/{systemSymbol}/waypoints": {
+      "get": {
+        "description": "Returns all waypoints for a system. Serves from local cache only once a complete walk of the system has been cached; otherwise fetches every page from SpaceTraders. Use `forceRefresh=true` to re-walk the system.",
+        "operationId": "getWaypointsBySystem",
+        "parameters": [
+          {
+            "description": "System symbol, e.g. X1-FQ86",
+            "in": "path",
+            "name": "systemSymbol",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Bypass cache and re-fetch all waypoints for the system",
+            "in": "query",
+            "name": "forceRefresh",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object"
+                  }
+                }
+              }
+            },
+            "description": "List of waypoints"
+          },
+          "400": {
+            "description": "Malformed system symbol"
+          },
+          "401": {
+            "description": "Not cached and caller is anonymous, or auth-service says a presented token is not active"
+          },
+          "404": {
+            "description": "System not found"
+          },
+          "4XX": {
+            "description": "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected"
+          },
+          "502": {
+            "description": "st-gateway answered with something unreadable"
+          },
+          "503": {
+            "description": "auth-service could not verify a presented token (`the authentication service could not process this request`), or relayed from st-gateway: no SpaceTraders credential configured"
+          },
+          "504": {
+            "description": "st-gateway did not answer"
+          }
+        },
+        "summary": "List waypoints by system",
+        "tags": [
+          "Waypoints"
+        ]
+      }
+    },
+    "/api/navigation/v1/systems/{systemSymbol}/waypoints/refresh": {
+      "post": {
+        "description": "Force-fetches all waypoints for a system from SpaceTraders and replaces the local cache.",
+        "operationId": "refreshWaypointsBySystem",
+        "parameters": [
+          {
+            "description": "System symbol, e.g. X1-FQ86",
+            "in": "path",
+            "name": "systemSymbol",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object"
+                  }
+                }
+              }
+            },
+            "description": "Updated list of waypoints"
+          },
+          "400": {
+            "description": "Malformed system symbol"
+          },
+          "401": {
+            "description": "No bearer token, or auth-service says the presented one is not active"
+          },
+          "403": {
+            "description": "A verified session without the universe:refresh scope"
+          },
+          "4XX": {
+            "description": "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected"
+          },
+          "502": {
+            "description": "st-gateway answered with something unreadable"
+          },
+          "503": {
+            "description": "auth-service could not verify a presented token (`the authentication service could not process this request`), or relayed from st-gateway: no SpaceTraders credential configured"
+          },
+          "504": {
+            "description": "st-gateway did not answer"
+          }
+        },
+        "summary": "Refresh all waypoints for a system",
+        "tags": [
+          "Waypoints"
+        ]
+      }
+    },
+    "/api/navigation/v1/waypoints/{symbol}": {
+      "get": {
+        "description": "Returns a waypoint. Serves from local cache if available; fetches from SpaceTraders on first miss. Use `forceRefresh=true` to bypass the cache.",
+        "operationId": "getWaypoint",
+        "parameters": [
+          {
+            "description": "Waypoint symbol, e.g. X1-FQ86-B29",
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Bypass cache and re-fetch from SpaceTraders",
+            "in": "query",
+            "name": "forceRefresh",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonNode"
+                }
+              }
+            },
+            "description": "Waypoint data"
+          },
+          "400": {
+            "description": "Malformed waypoint symbol"
+          },
+          "401": {
+            "description": "Not cached and caller is anonymous, or auth-service says a presented token is not active"
+          },
+          "404": {
+            "description": "Waypoint not found in SpaceTraders"
+          },
+          "4XX": {
+            "description": "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected"
+          },
+          "502": {
+            "description": "st-gateway answered with something unreadable"
+          },
+          "503": {
+            "description": "auth-service could not verify a presented token (`the authentication service could not process this request`), or relayed from st-gateway: no SpaceTraders credential configured"
+          },
+          "504": {
+            "description": "st-gateway did not answer"
+          }
+        },
+        "summary": "Get waypoint by symbol",
+        "tags": [
+          "Waypoints"
+        ]
+      }
+    },
+    "/api/navigation/v1/waypoints/{symbol}/market": {
+      "get": {
+        "description": "Returns market data (imports/exports/exchange, prices). Serves from local cache if fetched within the last 60 seconds; fetches fresh from SpaceTraders otherwise. Use `forceRefresh=true` to always bypass the cache.",
+        "operationId": "getMarket",
+        "parameters": [
+          {
+            "description": "Waypoint symbol, e.g. X1-FQ86-B29",
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Bypass cache and re-fetch from SpaceTraders",
+            "in": "query",
+            "name": "forceRefresh",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonNode"
+                }
+              }
+            },
+            "description": "Market data"
+          },
+          "400": {
+            "description": "Malformed waypoint symbol"
+          },
+          "401": {
+            "description": "Not cached and caller is anonymous, or auth-service says a presented token is not active"
+          },
+          "404": {
+            "description": "Waypoint has no marketplace"
+          },
+          "4XX": {
+            "description": "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected"
+          },
+          "502": {
+            "description": "st-gateway answered with something unreadable"
+          },
+          "503": {
+            "description": "auth-service could not verify a presented token (`the authentication service could not process this request`), or relayed from st-gateway: no SpaceTraders credential configured"
+          },
+          "504": {
+            "description": "st-gateway did not answer"
+          }
+        },
+        "summary": "Get market data for a waypoint",
+        "tags": [
+          "Market"
+        ]
+      }
+    },
+    "/api/navigation/v1/waypoints/{symbol}/market/refresh": {
+      "post": {
+        "description": "Force-fetches market data from SpaceTraders and updates the local cache.",
+        "operationId": "refreshMarket",
+        "parameters": [
+          {
+            "description": "Waypoint symbol, e.g. X1-FQ86-B29",
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonNode"
+                }
+              }
+            },
+            "description": "Updated market data"
+          },
+          "400": {
+            "description": "Malformed waypoint symbol"
+          },
+          "401": {
+            "description": "No bearer token, or auth-service says the presented one is not active"
+          },
+          "403": {
+            "description": "A verified session without the universe:refresh scope"
+          },
+          "404": {
+            "description": "Waypoint has no marketplace"
+          },
+          "4XX": {
+            "description": "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected"
+          },
+          "502": {
+            "description": "st-gateway answered with something unreadable"
+          },
+          "503": {
+            "description": "auth-service could not verify a presented token (`the authentication service could not process this request`), or relayed from st-gateway: no SpaceTraders credential configured"
+          },
+          "504": {
+            "description": "st-gateway did not answer"
+          }
+        },
+        "summary": "Refresh market data for a waypoint",
+        "tags": [
+          "Market"
+        ]
+      }
+    },
+    "/api/navigation/v1/waypoints/{symbol}/refresh": {
+      "post": {
+        "description": "Force-fetches the waypoint from SpaceTraders and updates the local cache.",
+        "operationId": "refreshWaypoint",
+        "parameters": [
+          {
+            "description": "Waypoint symbol, e.g. X1-FQ86-B29",
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonNode"
+                }
+              }
+            },
+            "description": "Updated waypoint data"
+          },
+          "400": {
+            "description": "Malformed waypoint symbol"
+          },
+          "401": {
+            "description": "No bearer token, or auth-service says the presented one is not active"
+          },
+          "403": {
+            "description": "A verified session without the universe:refresh scope"
+          },
+          "404": {
+            "description": "Waypoint not found"
+          },
+          "4XX": {
+            "description": "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected"
+          },
+          "502": {
+            "description": "st-gateway answered with something unreadable"
+          },
+          "503": {
+            "description": "auth-service could not verify a presented token (`the authentication service could not process this request`), or relayed from st-gateway: no SpaceTraders credential configured"
+          },
+          "504": {
+            "description": "st-gateway did not answer"
+          }
+        },
+        "summary": "Refresh a single waypoint",
+        "tags": [
+          "Waypoints"
+        ]
+      }
+    },
+    "/api/navigation/v1/waypoints/{symbol}/shipyard": {
+      "get": {
+        "description": "Returns shipyard data (ships for sale). Serves from local cache if available; fetches from SpaceTraders on first miss. Use `forceRefresh=true` to bypass the cache.",
+        "operationId": "getShipyard",
+        "parameters": [
+          {
+            "description": "Waypoint symbol, e.g. X1-FQ86-B29",
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Bypass cache and re-fetch from SpaceTraders",
+            "in": "query",
+            "name": "forceRefresh",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonNode"
+                }
+              }
+            },
+            "description": "Shipyard data"
+          },
+          "400": {
+            "description": "Malformed waypoint symbol"
+          },
+          "401": {
+            "description": "Not cached and caller is anonymous, or auth-service says a presented token is not active"
+          },
+          "404": {
+            "description": "Waypoint has no shipyard"
+          },
+          "4XX": {
+            "description": "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected"
+          },
+          "502": {
+            "description": "st-gateway answered with something unreadable"
+          },
+          "503": {
+            "description": "auth-service could not verify a presented token (`the authentication service could not process this request`), or relayed from st-gateway: no SpaceTraders credential configured"
+          },
+          "504": {
+            "description": "st-gateway did not answer"
+          }
+        },
+        "summary": "Get shipyard data for a waypoint",
+        "tags": [
+          "Shipyard"
+        ]
+      }
+    },
+    "/api/navigation/v1/waypoints/{symbol}/shipyard/refresh": {
+      "post": {
+        "description": "Force-fetches shipyard data from SpaceTraders and updates the local cache.",
+        "operationId": "refreshShipyard",
+        "parameters": [
+          {
+            "description": "Waypoint symbol, e.g. X1-FQ86-B29",
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonNode"
+                }
+              }
+            },
+            "description": "Updated shipyard data"
+          },
+          "400": {
+            "description": "Malformed waypoint symbol"
+          },
+          "401": {
+            "description": "No bearer token, or auth-service says the presented one is not active"
+          },
+          "403": {
+            "description": "A verified session without the universe:refresh scope"
+          },
+          "404": {
+            "description": "Waypoint has no shipyard"
+          },
+          "4XX": {
+            "description": "Any other status st-gateway sent, relayed with its own message and its Retry-After / X-RateLimit-* headers - 429 when the shared rate budget is spent, 401 when the injected agent token was rejected"
+          },
+          "502": {
+            "description": "st-gateway answered with something unreadable"
+          },
+          "503": {
+            "description": "auth-service could not verify a presented token (`the authentication service could not process this request`), or relayed from st-gateway: no SpaceTraders credential configured"
+          },
+          "504": {
+            "description": "st-gateway did not answer"
+          }
+        },
+        "summary": "Refresh shipyard data for a waypoint",
+        "tags": [
+          "Shipyard"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "health-controller"
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "JsonNode": {
+        "type": "object"
+      }
+    }
+  }
+}

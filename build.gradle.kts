@@ -35,6 +35,29 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
+// openapi.json is written by a tagged test class (OpenApiSpecWriter), never by the suite.
+tasks.test {
+    useJUnitPlatform {
+        excludeTags("openapi")
+    }
+}
+
+// Regenerates openapi.json in the repository root from the whole application context,
+// through MockMvc, with a throwaway SQLite file and the stub auth-service: no port, no
+// network. CI runs it and fails on any diff, so commit the result with the change behind it.
+tasks.register<Test>("openapi") {
+    description = "Regenerates openapi.json from the application context."
+    group = "documentation"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags("openapi")
+    }
+    systemProperty("openapi.output", layout.projectDirectory.file("openapi.json").asFile.absolutePath)
+    // Always runs: the file is the product, and a hand-edited or deleted one must be rewritten.
+    outputs.upToDateWhen { false }
+}
+
 // Only the executable jar is ever deployed; leaving the plain library jar enabled means
 // build/libs holds two jars, and the Dockerfile's `COPY build/libs/*.jar app.jar` breaks
 // the moment anything runs `build` instead of `bootJar`.
