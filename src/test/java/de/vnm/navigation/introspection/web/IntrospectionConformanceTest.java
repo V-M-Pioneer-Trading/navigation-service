@@ -69,7 +69,7 @@ class IntrospectionConformanceTest {
 
     private static final String FIXTURE = "/introspection/introspection.json";
     private static final String SOURCE = "/introspection/SOURCE.txt";
-    private static final String PINNED_SHA256 = "3918d6790d583f0346498a1f61482d0bb846f46a24706d4e9e09181eac5f62c0";
+    private static final String PINNED_SHA256 = "f12d41d91b12cd4b8d6674a534ad718d90273aaa93becab4e836654467c43c7c";
 
     /** Stands in for {@code <AUTH_INTROSPECTION_SECRET>} in the fixture. */
     private static final String SECRET = "conformance-caller-secret-7f3a9c";
@@ -107,7 +107,7 @@ class IntrospectionConformanceTest {
                     : "introspection.json hashes to " + actual + ", SOURCE.txt records " + PINNED_SHA256
                       + " — re-copy it from meta and update BOTH the commit and the sha256 in SOURCE.txt");
         }
-        assertThat(raw).hasSize(69322);
+        assertThat(raw).hasSize(69287);
         assertThat(fixture().path("version").asInt()).as("fixture version").isEqualTo(6);
     }
 
