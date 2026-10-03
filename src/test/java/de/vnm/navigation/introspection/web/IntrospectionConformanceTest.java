@@ -44,7 +44,7 @@ import static org.assertj.core.api.Assertions.fail;
  * Conformance against {@code meta/fixtures/introspection.json}, vendored verbatim into
  * {@code src/test/resources/introspection/} (provenance and sha256 in {@code SOURCE.txt}).
  *
- * <p>Every one of the 41 calling-service cases is driven through the real
+ * <p>Every one of the 51 calling-service cases is driven through the real
  * {@link IntrospectionInterceptor} and the real {@link IntrospectionClient} against a real
  * HTTP stub of the center implementing the case's {@code center} object: {@code status},
  * {@code body}, {@code delayMs}, {@code notCalled}, and {@code transport: "no-response"} (a
@@ -60,7 +60,7 @@ import static org.assertj.core.api.Assertions.fail;
  * How Spring binds a declaration to a real route is the adapter's own obligation, tested in
  * {@code AdapterRoutingTest}.
  *
- * <p>The 13 st-gateway cases are a different policy (a lane, never a verdict) that this
+ * <p>The 14 st-gateway cases are a different policy (a lane, never a verdict) that this
  * service does not implement. They are skipped by name, and their count is asserted, so a
  * gateway case added in meta is noticed here too.
  */
@@ -69,7 +69,7 @@ class IntrospectionConformanceTest {
 
     private static final String FIXTURE = "/introspection/introspection.json";
     private static final String SOURCE = "/introspection/SOURCE.txt";
-    private static final String PINNED_SHA256 = "ffbb7aa932d8d8523da125a0ff9a93f1fd771d5a32841d7e03ee25ec7b1315b7";
+    private static final String PINNED_SHA256 = "3918d6790d583f0346498a1f61482d0bb846f46a24706d4e9e09181eac5f62c0";
 
     /** Stands in for {@code <AUTH_INTROSPECTION_SECRET>} in the fixture. */
     private static final String SECRET = "conformance-caller-secret-7f3a9c";
@@ -95,7 +95,7 @@ class IntrospectionConformanceTest {
         Matcher recorded = Pattern.compile("(?m)^\\s*sha256:\\s*([0-9a-f]{64})\\s*$").matcher(source);
         assertThat(recorded.find()).as("SOURCE.txt records a sha256").isTrue();
         assertThat(recorded.group(1))
-                .as("SOURCE.txt; this test was written against meta aa877e7 (fixture version 5)")
+                .as("SOURCE.txt; this test was written against fixture version 6")
                 .isEqualTo(PINNED_SHA256);
 
         String actual = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(raw));
@@ -107,8 +107,8 @@ class IntrospectionConformanceTest {
                     : "introspection.json hashes to " + actual + ", SOURCE.txt records " + PINNED_SHA256
                       + " — re-copy it from meta and update BOTH the commit and the sha256 in SOURCE.txt");
         }
-        assertThat(raw).hasSize(56516);
-        assertThat(fixture().path("version").asInt()).as("fixture version").isEqualTo(5);
+        assertThat(raw).hasSize(69322);
+        assertThat(fixture().path("version").asInt()).as("fixture version").isEqualTo(6);
     }
 
     @Test
@@ -118,26 +118,33 @@ class IntrospectionConformanceTest {
         fixture().path("gatewayCases").forEach(c -> names.add(c.path("name").asText()));
         assertThat(names).containsExactly(
                 "active-machine-kind", "active-with-irregular-scope-whitespace", "active-with-multi-value-scope",
+                "active-with-non-separators-in-scope", "active-with-only-spaces-in-scope",
                 "active-with-required-scope", "active-with-scope-differing-only-in-case",
                 "active-with-scope-that-is-a-prefix-of-required", "active-without-required-scope",
                 "bearer-with-empty-token", "bearer-with-internal-whitespace", "center-rejects-our-caller-secret",
-                "center-returns-500", "center-returns-duplicate-key", "center-returns-malformed-json", "center-times-out", "center-unreachable",
-                "gateway-active-machine", "gateway-active-operator", "gateway-active-operator-lacking-scope-key",
-                "gateway-bearer-with-empty-token", "gateway-center-rejects-our-caller-secret", "gateway-center-returns-duplicate-key",
+                "center-returns-500", "center-returns-case-variant-duplicate-key",
+                "center-returns-contract-key-in-another-case", "center-returns-duplicate-key",
+                "center-returns-malformed-json", "center-times-out", "center-unreachable", "gateway-active-machine",
+                "gateway-active-operator", "gateway-active-operator-lacking-scope-key",
+                "gateway-bearer-with-empty-token", "gateway-center-rejects-our-caller-secret",
+                "gateway-center-returns-case-variant-duplicate-key", "gateway-center-returns-duplicate-key",
                 "gateway-center-unreachable", "gateway-inactive-token", "gateway-kind-machine-with-user-subject",
-                "gateway-kind-operator-with-machine-subject", "gateway-no-header", "gateway-non-bearer-scheme", "gateway-two-authorization-lines",
-                "head-on-guarded-route-with-no-header", "head-on-guarded-route-with-valid-token", "head-on-public-get",
-                "inactive-token-on-guarded-route", "inactive-token-on-public-get", "kind-disagrees-with-sub-prefix",
-                "lowercase-bearer-scheme", "lowercase-route-method", "mutating-route-with-no-declared-scope",
+                "gateway-kind-operator-with-machine-subject", "gateway-no-header", "gateway-non-bearer-scheme",
+                "gateway-two-authorization-lines", "head-on-guarded-route-with-no-header",
+                "head-on-guarded-route-with-valid-token", "head-on-public-get", "inactive-token-on-guarded-route",
+                "inactive-token-on-public-get", "kind-disagrees-with-sub-prefix", "lowercase-bearer-scheme",
+                "lowercase-route-method", "mutating-route-with-no-declared-scope",
                 "mutating-route-with-no-declared-scope-and-inactive-token",
                 "mutating-route-with-no-declared-scope-and-no-header", "no-header-on-guarded-route",
                 "non-bearer-scheme-on-guarded-route", "operator-on-public-get",
                 "options-on-guarded-route-with-no-header", "options-with-no-declared-scope",
+                "scope-joined-by-em-space", "scope-joined-by-form-feed", "scope-joined-by-no-break-space",
+                "scope-joined-by-several-spaces", "scope-joined-by-tab", "scope-joined-by-vertical-tab",
                 "scoped-route-with-token-lacking-scope-key", "session-route-with-inactive-token",
                 "session-route-with-no-header", "session-route-with-scopeless-token",
-                "session-route-with-token-lacking-scope-key", "token-on-public-get-while-center-is-down", "two-authorization-lines",
-                "two-authorization-lines-on-public-get", "two-authorization-lines-second-empty",
-                "visitor-on-public-get");
+                "session-route-with-token-lacking-scope-key", "token-on-public-get-while-center-is-down",
+                "two-authorization-lines", "two-authorization-lines-on-public-get",
+                "two-authorization-lines-second-empty", "visitor-on-public-get");
     }
 
     /** Every name and number three implementations agree on. */
@@ -164,12 +171,12 @@ class IntrospectionConformanceTest {
         assertThat(messages.path("centerUnavailable").asText()).isEqualTo(Rejection.CENTER_UNAVAILABLE.message());
     }
 
-    // ── the 41 calling-service cases ───────────────────────────────────────────────────
+    // ── the 51 calling-service cases ───────────────────────────────────────────────────
 
     @TestFactory
     Stream<DynamicTest> callingServiceCases(CapturedOutput output) throws Exception {
         JsonNode cases = fixture().path("cases");
-        assertThat(cases.size()).as("calling-service cases; this test was written against 41").isEqualTo(41);
+        assertThat(cases.size()).as("calling-service cases; this test was written against 51").isEqualTo(51);
         String endpointPath = fixture().at("/contract/endpoint/path").asText();
 
         List<DynamicTest> tests = new ArrayList<>();
@@ -186,7 +193,7 @@ class IntrospectionConformanceTest {
     @TestFactory
     Stream<DynamicTest> gatewayCasesAreNotThisServicesPolicy() throws Exception {
         JsonNode gatewayCases = fixture().path("gatewayCases");
-        assertThat(gatewayCases.size()).as("gateway cases; this test was written against 13").isEqualTo(13);
+        assertThat(gatewayCases.size()).as("gateway cases; this test was written against 14").isEqualTo(14);
 
         List<DynamicTest> tests = new ArrayList<>();
         for (JsonNode c : gatewayCases) {
