@@ -2,8 +2,8 @@ introspection.json in this directory is a VERBATIM copy. Do not edit it here.
 
   original: meta/fixtures/introspection.json
             (V-M-Pioneer-Trading/meta, repo root `fixtures/introspection.json`)
-  meta commit: 993fea9eb1c38de03b9bea14d6e03d8b450750cc (2026-10-03, fixture version 6)
-  sha256: 90562110d24e47bfdcbf7ff05f1112b4bc840835bf728fa7f6bd81ff67bbeb9c
+  meta commit: f226e5f49b59d094a83a07fbb2f3caf3149a8d66 (2026-10-05, fixture version 7)
+  sha256: 95cb78d820dd3eb65f93eb91c379fac152924f1fa9b799bf01603c8f162cda2b
 
 The sha256 above is the hash of the LF bytes of introspection.json and is
 asserted by IntrospectionConformanceTest, so the pin enforces itself instead of
@@ -15,16 +15,23 @@ The provenance lives in this sibling file rather than as a key inside the JSON
 so the copy stays byte-identical to the original and `diff` is the drift check.
 Change meta first, then re-copy and update the commit and the sha256 above.
 
-navigation-service is a CALLING SERVICE. All 51 `cases` bind it and are driven
+navigation-service is a CALLING SERVICE. All 56 `cases` bind it and are driven
 by IntrospectionConformanceTest through the real HandlerInterceptor and the
 real java.net.http client against a real stub of the center (the JDK's
-com.sun.net.httpserver). The 14 `gatewayCases` are st-gateway's lane policy,
+com.sun.net.httpserver). The 19 `gatewayCases` are st-gateway's lane policy,
 which this service does not implement; the test skips them by name and asserts
-there are exactly 14, so a gateway case added in meta is noticed here too.
+there are exactly 19, so a gateway case added in meta is noticed here too.
 
-The meta commit above is the head of meta pull request #107, "Fixture v6: what
-separates scopes, and top-level keys ignoring case", merged with a merge
-commit so it lands on meta's main unchanged. Version 6 needed no code change
-here: Fields.scopeSeparators already split `scope` on runs of space, tab, CR
-and LF only, and CenterAnswerParser already refused two top-level keys equal
-ignoring case and a contract key spelled any other way.
+The meta commit above is the head of meta pull request #108, "Fixture v7: a
+non-2xx answer is unavailable whatever its body says", merged with a merge
+commit so it lands on meta's main unchanged. Version 7 adds five calling-service
+cases in which the center answers 500, 401, 302, 503 or 404 with a valid active
+body; each must be 503 centerUnavailable after one call. It needed no code
+change here: IntrospectionClient refuses any status outside 200-299 before the
+body is looked at (its body subscriber does not even read a non-2xx body), and
+the client never follows a redirect (Redirect.NEVER).
+
+Version 6 (meta #107, commit 993fea9) needed no code change either:
+Fields.scopeSeparators already split `scope` on runs of space, tab, CR and LF
+only, and CenterAnswerParser already refused two top-level keys equal ignoring
+case and a contract key spelled any other way.
