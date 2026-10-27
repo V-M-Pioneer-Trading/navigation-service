@@ -6,7 +6,7 @@ Read-through SQLite cache for SpaceTraders waypoints, markets and shipyards. Jav
 |---|---|
 | `NavigationServiceApplication.java` | entry |
 | `api/` | `WaypointController`, `MarketController`, `ShipyardController`, `HealthController` |
-| `auth/`, `introspection/` | `ClerkAuthFilter`, auth annotations, introspection client |
+| `introspection/`, `introspection/web/` | introspection client; `IntrospectionInterceptor`, `DeclarationAudit`, the four auth annotations |
 | `service/` | business logic (no service-to-service calls) |
 | `client/` | the only HTTP caller (st-gateway) |
 | `repository/` | the only SQL writer |
