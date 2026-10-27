@@ -20,3 +20,9 @@ Read-through SQLite cache for SpaceTraders waypoints, markets and shipyards. Jav
 - Tables: `waypoints` (no TTL), `markets` (60 s TTL), `shipyards`, `system_fetches`. Hikari pool 1, single writer.
 - Every handler carries exactly one auth annotation or the app refuses to start.
 - CI `container.yml`: `test` (+ openapi regenerate and diff), `docker` (main: SSM redeploy), `sync-openapi`.
+
+## Reference docs
+
+- `README.md` "API", "Authentication", "Errors": read when changing routes, their auth or error mapping.
+- `README.md` "Configuration", "Container": read when deploying.
+- `README.md` "Why a system listing is special", "Nothing expires by default": read when touching cache freshness.

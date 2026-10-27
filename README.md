@@ -351,8 +351,8 @@ Windows checkout LF too).
 
 CI's `test` job regenerates it on every pull request and push and fails if
 `git diff openapi.json` shows anything, so a change to a route or an annotation commits
-the regenerated file in the same PR. Pushes to main will also sync it to meta's
-`openapi/navigation-service.json` (meta#26, a later PR).
+the regenerated file in the same PR. Pushes to main also sync it to meta's
+`openapi/navigation-service.json` (the `sync-openapi` job in `.github/workflows/container.yml`).
 
 ---
 
