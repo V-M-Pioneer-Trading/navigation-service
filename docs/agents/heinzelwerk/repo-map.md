@@ -37,3 +37,7 @@ Facts verified against origin/main 72459f3 on 2026-10-27, each with `path:line`.
 - Pool size 1: holding a tx while querying via a second JdbcTemplate deadlocks (CLAUDE.md:227-228). Gradle 8.4 wrapper vs 8.10.2 Docker, keep both working (CLAUDE.md:18-22). 500 is ambiguous: bug, corrupt row, or relayed gateway 500 (CLAUDE.md:89-91).
 - Plain jar disabled so Dockerfile's build/libs/*.jar matches one file (build.gradle.kts:61-66; Dockerfile:49).
 11. DOCS OUTSIDE docs/agents/: README.md (architecture, read path, auth, config, API, errors, OpenAPI, limitations, related services; README.md:25,66,122,219,268,310,336,359,383); CLAUDE.md (commands, module map, dependency rules, 14 invariants, harness, extension conventions; CLAUDE.md:6,24,52,77,192,249); openapi.json generated, synced to meta. No docs/ directory.
+
+## Reference docs
+
+- `README.md` read-path and Authentication tables: read when changing a route's cache or auth behaviour.

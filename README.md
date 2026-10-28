@@ -354,6 +354,8 @@ CI's `test` job regenerates it on every pull request and push and fails if
 the regenerated file in the same PR. Pushes to main will also sync it to meta's
 `openapi/navigation-service.json` (meta#26, a later PR).
 
+Correction (2026-10-28): a sync-openapi job already pushes openapi.json to meta's openapi/navigation-service.json on every push to main, see .github/workflows/container.yml:234.
+
 ---
 
 ## Known limitations
