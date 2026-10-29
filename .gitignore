@@ -37,3 +37,6 @@ out/
 ### Local runtime ###
 # SQLite database created by bootRun (SQLITE_DB_PATH default)
 data/
+
+# heinzelwerk task worktrees
+.claude/worktrees/
