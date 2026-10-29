@@ -204,6 +204,8 @@ Eight levels, deliberately:
 | Context runner | `DeclarationAuditTest` | The startup refusal: an undeclared handler, a public mutation, a missing env var. |
 | `@SpringBootTest` + real SQLite | `NavigationCacheIntegrationTest`, `ServedApplicationAuthorizationTest` | Schema, SQL, transactions — the only level that can catch a rollback bug; and the whole app on a real port for what only Tomcat shows (error dispatch, HEAD, repeated header lines). |
 
+Correction (2026-10-29): the introspection fixture is at version 7 and binds this service with 56 calling-service cases, not 37, see src/test/java/de/vnm/navigation/introspection/web/IntrospectionConformanceTest.java:183.
+
 Notes that will save time:
 
 - Use `@MockitoBean` / `@MockitoSpyBean` (Spring Framework 6.2), **not** the removal-marked
@@ -245,6 +247,8 @@ Notes that will save time:
 
 No flaky test is currently known. The suite was at 334 tests (11 of them the skipped
 st-gateway fixture cases) when this file was last updated.
+
+Correction (2026-10-29): the fixture carries 19 st-gateway cases, not 11, and the test asserts that count, see src/test/java/de/vnm/navigation/introspection/web/IntrospectionConformanceTest.java:200.
 
 ## Extension conventions
 
@@ -289,3 +293,13 @@ st-gateway fixture cases) when this file was last updated.
 **This file is updated in the same PR as the change it describes.** A module map, an
 invariant list or a flake note that lags the code is worse than none, because the next
 reader will trust it.
+
+## Agent skills (heinzelwerk)
+
+- **Precedence**: for heinzelwerk team work, these pointers override any other agent-skills block in this file.
+- **Issue tracker**: GitHub issues, one tracker for the workspace in V-M-Pioneer-Trading/meta. See `docs/agents/heinzelwerk/issue-tracker.md` before creating, reading, or labelling issues.
+- **Triage labels**: the five canonical labels, defined in meta only. See `docs/agents/heinzelwerk/triage-labels.md` before applying any label.
+- **Domain docs**: multi-context workspace, one context per repo; map in `../meta/GLOSSARY-MAP.md`. Read `docs/agents/heinzelwerk/domain.md` before exploring code or naming anything.
+- **Team rules**: read `docs/agents/heinzelwerk/team.md` before any team task.
+- **Repo map**: see `docs/agents/heinzelwerk/repo-map.md` when locating code.
+- **Learnings**: read `../meta/docs/agents/heinzelwerk/learnings.md` before starting any task.
