@@ -84,3 +84,6 @@ Java under `src/main/java/de/vnm/navigation/` (abbreviated `src/main/java/de/vnm
 - Dockerfile Gradle 8.10.2, wrapper 8.4: keep both working; jar task disabled, only `bootJar`. `Dockerfile:3`, `gradle/wrapper/gradle-wrapper.properties:3`, `build.gradle.kts:64-66`
 - `src/test/resources/gateway-errors.json` is NOT byte-verbatim: line 2 `$comment` differs from `../meta/fixtures/gateway-errors.json:2`; no pin file. (verified 2026-10-29 @ 72459f3: diff with line 2 removed is empty)
 - Stale `CLAUDE.md`: line 201 says 37 introspection cases, fixture v7 has 56 (`src/test/resources/introspection/SOURCE.txt:18`); lines 246-247 cite 334 tests / 11 skipped gateway cases, actual 19 gateway cases skipped (`src/test/java/de/vnm/navigation/introspection/web/IntrospectionConformanceTest.java:63`).
+
+## Reference docs
+- `./README.md` system listing response: read when consuming a system listing (`{data, total}`; `total` = waypoints in this response, not SpaceTraders' page count).
