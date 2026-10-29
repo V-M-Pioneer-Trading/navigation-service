@@ -29,7 +29,8 @@ Java under `src/main/java/de/vnm/navigation/` (abbreviated `src/main/java/de/vnm
 
 ## Unauthenticated routes
 - `@IgnoreCredentials` `GET /health` and `GET /api/navigation/health`. `src/main/java/de/vnm/navigation/api/HealthController.java:21-22`
-- Springdoc `/api-docs` + Swagger UI, `BasicErrorController`, Spring OPTIONS responder, CORS preflight: credentials ignored. `src/main/java/de/vnm/navigation/introspection/web/Declarations.java:31-52,181-189`
+- Springdoc `/api-docs` + Swagger UI, `BasicErrorController`, CORS preflight: credentials ignored. `src/main/java/de/vnm/navigation/introspection/web/Declarations.java:31-52,181-189`
+- Spring OPTIONS responder is `ignore` only when every handler on the path ignores credentials, otherwise `none` (a presented token is verified; a bad one 401s). `src/main/java/de/vnm/navigation/introspection/web/Declarations.java:40-45,88-89,188-189`
 - Anonymous `@AllowPublic` reads serve only a fresh cache row; a miss (or expired market row) is 401. `src/main/java/de/vnm/navigation/service/LiveFetch.java:20-25`, `src/main/java/de/vnm/navigation/service/CachedResourceService.java:69-77`
 - Bad token 401, unverifiable 503, never anonymous. `CLAUDE.md:111-115`
 - ANY verified session, no scope, can force upstream fetch: `GET ?forceRefresh=true` or any cache miss only calls `requireSession`; so `universe:refresh` guards only the POST routes, not upstream fan-out (including the up-to-500-page system walk). `src/main/java/de/vnm/navigation/service/WaypointService.java:77-85,107-117`, `src/main/java/de/vnm/navigation/service/CachedResourceService.java:69-77`
