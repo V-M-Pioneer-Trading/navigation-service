@@ -4,7 +4,7 @@ How heinzelwerk agents work in this repo. Mode rules (single repo vs workspace) 
 
 - **Autonomy**: full. Agents merge and apply on their own; breakages are learnings. Secrets are never published (name the variable, never the value); the gate never merges its own policy.
 - **Backend paths**: `src/main/java/de/vnm/navigation/` (Java 21, Spring Boot; tests `src/test/java/`, resources `src/main/resources/`)
-- **Checks** (validator runs every one, in order; copied from CI, quiet flags only; a status note goes after the closing backtick, never inside the span, which must run as pasted):
+- **Checks** (validator runs every one, in order; copied from CI except where marked `not in CI`, quiet flags only; a status note goes after the closing backtick, never inside the span, which must run as pasted):
   - `./gradlew test`
   - `git ls-files --error-unmatch openapi.json > /dev/null && rm openapi.json && ./gradlew openapi && git diff --exit-code -- openapi.json`
   - `docker buildx build --platform linux/arm64 .` (unverified locally: docker daemon not running)
