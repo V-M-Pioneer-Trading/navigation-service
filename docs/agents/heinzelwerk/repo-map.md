@@ -51,7 +51,7 @@ Java under `src/main/java/de/vnm/navigation/` (abbreviated `src/main/java/de/vnm
 ## Persistence
 - SQLite, Hikari pool 1. `src/main/resources/application.properties:5-9`
 - Tables `waypoints`, `markets`, `shipyards`, `system_fetches`. `src/main/resources/schema.sql:1,13,22,34`
-- No migration tool: `schema.sql` runs every startup (`mode=always`) and must stay `IF NOT EXISTS` additive. `src/main/resources/application.properties:13`, `CLAUDE.md:286-287`
+- No migration tool: `schema.sql` runs every startup (`mode=always`) and must stay `IF NOT EXISTS` additive. `src/main/resources/application.properties:13`, `CLAUDE.md:282-283`
 - DB directory created by a listener added in main, not a bean. `src/main/java/de/vnm/navigation/NavigationServiceApplication.java:14`
 - The "data/" dir (SQLite default "./data/navigation.db") is git-ignored (`.gitignore:39`, `src/main/resources/application.properties:5`)
 
@@ -71,21 +71,19 @@ Java under `src/main/java/de/vnm/navigation/` (abbreviated `src/main/java/de/vnm
 
 ## Patterns
 - Exactly one auth annotation per handler; public mutation refused at startup. `src/main/java/de/vnm/navigation/introspection/web/DeclarationAudit.java:28-35`
-- New route: README route line, `RouteAuthorizationTest` case, `./gradlew openapi`. `CLAUDE.md:266-272`
-- New upstream call via `SpaceTradersClient.fetchOne`, `callerAuthorization` last param. `src/main/java/de/vnm/navigation/client/SpaceTradersClient.java:177`, `CLAUDE.md:259-262`
-- New cached resource: `LocationDataRepository` + `CachedResourceService` subclass. `CLAUDE.md:255-258`
+- New route: README route line, `RouteAuthorizationTest` case, `./gradlew openapi`. `CLAUDE.md:262-268`
+- New upstream call via `SpaceTradersClient.fetchOne`, `callerAuthorization` last param. `src/main/java/de/vnm/navigation/client/SpaceTradersClient.java:177`, `CLAUDE.md:255-258`
+- New cached resource: `LocationDataRepository` + `CachedResourceService` subclass. `CLAUDE.md:251-254`
 - New request header goes into the CORS allow-list. `src/main/java/de/vnm/navigation/config/CorsConfig.java:29`
-- Regression test per bug fix; `@MockitoBean`, not `@MockBean`. `CLAUDE.md:288-289,211-212`
+- Regression test per bug fix; `@MockitoBean`, not `@MockBean`. `CLAUDE.md:284-285,209-210`
 
 ## Traps
 - System listing served only if `system_fetches` has the system; refresh = map all, delete, upsert, markComplete in one `@Transactional`. `src/main/java/de/vnm/navigation/service/WaypointService.java:102-124`
 - A verified session that forwards no Authorization silently drops to the background lane. `CLAUDE.md:69-72,119-126`
-- Every `@WebMvcTest`/`@SpringBootTest` needs `AUTH_INTROSPECTION_*` via `TestCenter.register` or the context won't start. `CLAUDE.md:213-217`
-- Hikari pool 1: a second `JdbcTemplate` inside an open transaction deadlocks. `CLAUDE.md:229-230`
+- Every `@WebMvcTest`/`@SpringBootTest` needs `AUTH_INTROSPECTION_*` via `TestCenter.register` or the context won't start. `CLAUDE.md:211-215`
+- Hikari pool 1: a second `JdbcTemplate` inside an open transaction deadlocks. `CLAUDE.md:227-228`
 - Dockerfile Gradle 8.10.2, wrapper 8.4: keep both working; jar task disabled, only `bootJar`. `Dockerfile:3`, `gradle/wrapper/gradle-wrapper.properties:3`, `build.gradle.kts:64-66`
 - `src/test/resources/gateway-errors.json` is NOT byte-verbatim: line 2 `$comment` differs from `../meta/fixtures/gateway-errors.json:2`; no pin file. (verified 2026-10-29 @ 72459f3: diff with line 2 removed is empty)
-- `CLAUDE.md` "## Testing harness" table row (:201) says 37 introspection cases; the test asserts 56. `src/test/java/de/vnm/navigation/introspection/web/IntrospectionConformanceTest.java:183`
-- `CLAUDE.md` "### Known flake patterns" closing paragraph (:248-249) says 11 skipped st-gateway cases; the test asserts 19. A dated Correction line follows each stale passage. `src/test/java/de/vnm/navigation/introspection/web/IntrospectionConformanceTest.java:200`
 
 ## Reference docs
 - `./README.md` system listing response: read when consuming a system listing (`{data, total}`; `total` = waypoints in this response, not SpaceTraders' page count).

@@ -7,8 +7,8 @@ How heinzelwerk agents work in this repo. Mode rules (single repo vs workspace) 
 - **Checks** (validator runs every one, in order; copied from CI, quiet flags only):
   - `./gradlew test`
   - `git ls-files --error-unmatch openapi.json > /dev/null && rm openapi.json && ./gradlew openapi && git diff --exit-code -- openapi.json`
-  - `docker buildx build --platform linux/arm64 . (unverified locally: docker daemon not running)`
-  - Dependency audit: `osv-scanner scan source -r . (unverified locally: osv-scanner not installed; not in CI)`
+  - `docker buildx build --platform linux/arm64 .` (unverified locally: docker daemon not running)
+  - Dependency audit: `osv-scanner scan source -r .` (unverified locally: osv-scanner not installed; not in CI)
 - **Verified against**: 72459f3 2026-10-29 (checks and every ref in this file; retro bumps it)
 - **Coding standards**: none: smell baseline only (no checkstyle, spotless, pmd, spotbugs or errorprone: `build.gradle.kts:1-66`; no `.editorconfig`); plus `CLAUDE.md` "## Invariants" (:77) and "## Extension conventions" (:253); line endings `.gitattributes:1-8`
 - **Risk areas** (validator reviews diffs touching these on Opus). Each entry is a path/glob or a described kind of change, plus why it is risky:
@@ -18,8 +18,8 @@ How heinzelwerk agents work in this repo. Mode rules (single repo vs workspace) 
   - Auth declarations: exactly one of `@AllowPublic`/`@RequireSession`/`@RequireScope`/`@IgnoreCredentials` per handler; public mutation refused at startup: `src/main/java/de/vnm/navigation/introspection/web/DeclarationAudit.java:28-35`; scope literal `src/main/java/de/vnm/navigation/auth/Scopes.java:12`; auth decision 20 `../meta/docs/design/auth-design.md`
   - A bad token is 401 and an unverifiable one 503, never anonymous: `CLAUDE.md` "## Invariants" item 10 (:111); introspection call `src/main/java/de/vnm/navigation/introspection/IntrospectionClient.java:49,66-69`
   - Caller `Authorization` relayed to st-gateway; dropping it silently moves the request to the background lane: `src/main/java/de/vnm/navigation/client/SpaceTradersClient.java:187-188`, `CLAUDE.md:69-72`
-  - `src/main/resources/schema.sql` runs on every startup against live SQLite (`spring.sql.init.mode=always`): must stay `IF NOT EXISTS` additive, no migration tool: `src/main/resources/application.properties:13`, `CLAUDE.md:286-287`
-  - Hikari pool size 1: a second `JdbcTemplate` inside an open transaction deadlocks: `src/main/resources/application.properties:5-9`, `CLAUDE.md:229-230`
+  - `src/main/resources/schema.sql` runs on every startup against live SQLite (`spring.sql.init.mode=always`): must stay `IF NOT EXISTS` additive, no migration tool: `src/main/resources/application.properties:13`, `CLAUDE.md:282-283`
+  - Hikari pool size 1: a second `JdbcTemplate` inside an open transaction deadlocks: `src/main/resources/application.properties:5-9`, `CLAUDE.md:227-228`
   - Both `/health` and `/api/navigation/health` are load-bearing: `src/main/java/de/vnm/navigation/api/HealthController.java:21-22`
   - infra paths: always a risk area (`../V-M-Pioneer-Trading_infrastructure/navigation-service/`)
 - **Contracts** (see team-modes **Contract changes**; validator checks every diff touching these):

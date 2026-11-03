@@ -198,13 +198,11 @@ Eight levels, deliberately:
 | Plain unit | `SymbolsTest`, `BearerTest`, `CenterAnswerParserTest` | Pure logic. The parser test is where every strictness rule of the center's answer lives. |
 | Mockito service | `WaypointServiceTest` | Cache decisions with repository and client mocked. |
 | `MockRestServiceServer` | `SpaceTradersClientTest` | The wire: request shape, pagination, status mapping. Only this and the conformance test below exercise the client; every other test mocks it. |
-| Vendored fixtures | `GatewayErrorConformanceTest`, `IntrospectionConformanceTest` | The shared contracts, one generated test per condition. `src/test/resources/gateway-errors.json` and `src/test/resources/introspection/introspection.json` are verbatim copies of meta's fixtures — **change meta first, then re-copy**, or the copy is just a local opinion. The introspection copy is pinned by sha256 (`SOURCE.txt`, `.gitattributes -text`); its 37 calling-service cases run through the real interceptor and the real HTTP client against a `StubCenter`, and an unknown key fails the case. |
+| Vendored fixtures | `GatewayErrorConformanceTest`, `IntrospectionConformanceTest` | The shared contracts, one generated test per condition. `src/test/resources/gateway-errors.json` and `src/test/resources/introspection/introspection.json` are verbatim copies of meta's fixtures — **change meta first, then re-copy**, or the copy is just a local opinion. The introspection copy is pinned by sha256 (`SOURCE.txt`, `.gitattributes -text`); its 56 calling-service cases run through the real interceptor and the real HTTP client against a `StubCenter`, and an unknown key fails the case. |
 | Real HTTP stub of auth-service | `IntrospectionClientTest` | The introspection wire: body cap, redirects, encoding. `StubCenter` is the JDK's `com.sun.net.httpserver`. |
 | `@WebMvcTest` + real interceptor | `RouteAuthorizationTest`, `AdapterRoutingTest` | This service's declarations on its real routes, and how Spring's routing (HEAD, OPTIONS, preflight, trailing slash, case, parameters) binds them. Against `TestCenter`, a shared `StubCenter` with a table of test tokens. No stub verifier, no signed tokens. |
 | Context runner | `DeclarationAuditTest` | The startup refusal: an undeclared handler, a public mutation, a missing env var. |
 | `@SpringBootTest` + real SQLite | `NavigationCacheIntegrationTest`, `ServedApplicationAuthorizationTest` | Schema, SQL, transactions — the only level that can catch a rollback bug; and the whole app on a real port for what only Tomcat shows (error dispatch, HEAD, repeated header lines). |
-
-Correction (2026-10-29): the introspection fixture is at version 7 and binds this service with 56 calling-service cases, not 37, see src/test/java/de/vnm/navigation/introspection/web/IntrospectionConformanceTest.java:183.
 
 Notes that will save time:
 
@@ -245,10 +243,8 @@ Notes that will save time:
 - **`MockRestServiceServer` expectations are ordered.** A pagination test must declare
   `page=1` before `page=2`, and the full URL including query string has to match.
 
-No flaky test is currently known. The suite was at 334 tests (11 of them the skipped
+No flaky test is currently known. The suite was at 380 tests (19 of them the skipped
 st-gateway fixture cases) when this file was last updated.
-
-Correction (2026-10-29): the fixture carries 19 st-gateway cases, not 11, and the test asserts that count, see src/test/java/de/vnm/navigation/introspection/web/IntrospectionConformanceTest.java:200.
 
 ## Extension conventions
 
@@ -304,3 +300,4 @@ reader will trust it.
 - **Out of scope**: see `../meta/docs/agents/heinzelwerk/out-of-scope.md` before proposing or triaging discovered work.
 - **Repo map**: see `docs/agents/heinzelwerk/repo-map.md` when locating code.
 - **Learnings**: read `../meta/docs/agents/heinzelwerk/learnings.md` before starting any task.
+- **Sibling paths** (workspace mode only): `../<repo>/…` above is relative to this repo's main checkout, i.e. the workspace folder. From a task worktree (`.claude/worktrees/<x>`), resolve it as `$(cd "$(git rev-parse --git-common-dir)/../.." && pwd)/<repo>/…`.
