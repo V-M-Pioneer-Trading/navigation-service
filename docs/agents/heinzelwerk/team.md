@@ -4,13 +4,13 @@ How heinzelwerk agents work in this repo. Mode rules (single repo vs workspace) 
 
 - **Autonomy**: full. Agents merge and apply on their own; breakages are learnings. Secrets are never published (name the variable, never the value); the gate never merges its own policy.
 - **Backend paths**: `src/main/java/de/vnm/navigation/` (Java 21, Spring Boot; tests `src/test/java/`, resources `src/main/resources/`)
-- **Checks** (validator runs every one, in order; copied from CI, quiet flags only):
+- **Checks** (validator runs every one, in order; copied from CI, quiet flags only; a status note goes after the closing backtick, never inside the span, which must run as pasted):
   - `./gradlew test`
   - `git ls-files --error-unmatch openapi.json > /dev/null && rm openapi.json && ./gradlew openapi && git diff --exit-code -- openapi.json`
   - `docker buildx build --platform linux/arm64 .` (unverified locally: docker daemon not running)
   - Dependency audit: `osv-scanner scan source -r .` (unverified locally: osv-scanner not installed; not in CI)
 - **Verified against**: 72459f3 2026-10-29 (checks and every ref in this file; retro bumps it)
-- **Coding standards**: none: smell baseline only (no checkstyle, spotless, pmd, spotbugs or errorprone: `build.gradle.kts:1-66`; no `.editorconfig`); plus `CLAUDE.md` "## Invariants" (:77) and "## Extension conventions" (:253); line endings `.gitattributes:1-8`
+- **Coding standards**: none: smell baseline only (no checkstyle, spotless, pmd, spotbugs or errorprone: `build.gradle.kts:1-66`; no `.editorconfig`); plus `CLAUDE.md` "## Invariants" (:77) and "## Extension conventions" (:249); line endings `.gitattributes:1-8`
 - **Risk areas** (validator reviews diffs touching these on Opus). Each entry is a path/glob or a described kind of change, plus why it is risky:
   - Merge to `main` deploys to production (SSM redeploy of navigation-service): `.github/workflows/container.yml:169-229`
   - `?forceRefresh=true` on `GET` routes: any verified session, no scope, forces upstream fetches on the shared st-gateway rate budget (system listing walks up to 500 pages x 20); `universe:refresh` guards only the POST routes: `src/main/java/de/vnm/navigation/service/WaypointService.java:77-85,107-117`, `src/main/java/de/vnm/navigation/service/CachedResourceService.java:69-77`, `src/main/java/de/vnm/navigation/client/SpaceTradersClient.java:67,70`
