@@ -224,8 +224,8 @@ Notes that will save time:
   ordering question entirely.
 - It empties all four tables in `@BeforeEach`; one context and one file are shared by the
   whole class.
-- The Hikari pool is one connection. A test that holds a transaction open while querying
-  through a second `JdbcTemplate` call will deadlock, not fail.
+- The Hikari pool is one connection, `connection-timeout` 30 s. A second connection asked for while it is checked out (another thread, `REQUIRES_NEW`) blocks 30 s, then fails;
+  `JdbcTemplate` calls inside the same transaction reuse its connection, so they never wait.
 - `SpaceTradersClientTest` verifies the mock server once, in `@AfterEach`, so every test —
   including ones added later — asserts that the request it declared was actually made.
   `MockRestServiceServer` only fails *unmatched* requests; a request never sent is invisible

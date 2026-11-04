@@ -81,7 +81,7 @@ Java under `src/main/java/de/vnm/navigation/` (abbreviated `src/main/java/de/vnm
 - System listing served only if `system_fetches` has the system; refresh = map all, delete, upsert, markComplete in one `@Transactional`. `src/main/java/de/vnm/navigation/service/WaypointService.java:102-124`
 - A verified session that forwards no Authorization silently drops to the background lane. `CLAUDE.md:69-72,119-126`
 - Every `@WebMvcTest`/`@SpringBootTest` needs `AUTH_INTROSPECTION_*` via `TestCenter.register` or the context won't start. `CLAUDE.md:211-215`
-- Hikari pool 1: a second `JdbcTemplate` inside an open transaction deadlocks. `CLAUDE.md:227-228`
+- Hikari pool 1, `connection-timeout` 30 s: a second connection while one is checked out blocks 30 s, then fails; same-transaction `JdbcTemplate` calls reuse it. `CLAUDE.md:227-228`
 - Dockerfile Gradle 8.10.2, wrapper 8.4: keep both working; jar task disabled, only `bootJar`. `Dockerfile:3`, `gradle/wrapper/gradle-wrapper.properties:3`, `build.gradle.kts:64-66`
 - `src/test/resources/gateway-errors.json` is NOT byte-verbatim: line 2 `$comment` differs from `../meta/fixtures/gateway-errors.json:2`; no pin file. (verified 2026-10-29 @ 72459f3: diff with line 2 removed is empty)
 

@@ -19,7 +19,7 @@ How heinzelwerk agents work in this repo. Mode rules (single repo vs workspace) 
   - A bad token is 401 and an unverifiable one 503, never anonymous: `CLAUDE.md` "## Invariants" item 10 (:111); introspection call `src/main/java/de/vnm/navigation/introspection/IntrospectionClient.java:49,66-69`
   - Caller `Authorization` relayed to st-gateway; dropping it silently moves the request to the background lane: `src/main/java/de/vnm/navigation/client/SpaceTradersClient.java:187-188`, `CLAUDE.md:69-72`
   - `src/main/resources/schema.sql` runs on every startup against live SQLite (`spring.sql.init.mode=always`): must stay `IF NOT EXISTS` additive, no migration tool: `src/main/resources/application.properties:13`, `CLAUDE.md:282-283`
-  - Hikari pool size 1: a second `JdbcTemplate` inside an open transaction deadlocks: `src/main/resources/application.properties:5-9`, `CLAUDE.md:227-228`
+  - Hikari pool size 1, `connection-timeout` 30 s: a second connection asked for while one is checked out (another thread, `REQUIRES_NEW`) blocks 30 s, then fails; `JdbcTemplate` calls inside the same transaction reuse its connection: `src/main/resources/application.properties:8-10`, `CLAUDE.md:227-228`
   - Both `/health` and `/api/navigation/health` are load-bearing: `src/main/java/de/vnm/navigation/api/HealthController.java:21-22`
   - infra paths: always a risk area (`../V-M-Pioneer-Trading_infrastructure/navigation-service/`)
 - **Contracts** (see team-modes **Contract changes**; validator checks every diff touching these):
