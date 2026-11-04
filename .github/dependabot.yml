@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # The workflows. Only Actions here so far.
+  # gradle/actions v6 moved its caching into a proprietary component whose
+  # Terms of Use you accept by using it; staying on v5 until that is decided.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: gradle/actions
+        update-types: ["version-update:semver-major"]
