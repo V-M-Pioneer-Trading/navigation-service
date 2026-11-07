@@ -9,7 +9,9 @@ import de.vnm.navigation.introspection.web.RequireScope;
 import de.vnm.navigation.service.ShipyardService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import de.vnm.navigation.api.schema.Shipyard;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -34,7 +36,8 @@ public class ShipyardController {
             fetches from SpaceTraders on first miss. Use `forceRefresh=true` to bypass the cache."""
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Shipyard data"),
+        @ApiResponse(responseCode = "200", description = "Shipyard data",
+                     content = @Content(mediaType = "application/json", schema = @Schema(implementation = Shipyard.class))),
         @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
         @ApiResponse(responseCode = "401", description = "Not cached and caller is anonymous, or auth-service says a presented token is not active",
                      content = @Content),
@@ -70,7 +73,8 @@ public class ShipyardController {
         description = "Force-fetches shipyard data from SpaceTraders and updates the local cache."
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Updated shipyard data"),
+        @ApiResponse(responseCode = "200", description = "Updated shipyard data",
+                     content = @Content(mediaType = "application/json", schema = @Schema(implementation = Shipyard.class))),
         @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
         @ApiResponse(responseCode = "401", description = "No bearer token, or auth-service says the presented one is not active", content = @Content),
         @ApiResponse(responseCode = "403", description = "A verified session without the universe:refresh scope", content = @Content),

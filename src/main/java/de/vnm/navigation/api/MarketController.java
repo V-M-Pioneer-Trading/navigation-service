@@ -9,7 +9,9 @@ import de.vnm.navigation.introspection.web.RequireScope;
 import de.vnm.navigation.service.MarketService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import de.vnm.navigation.api.schema.Market;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -35,7 +37,8 @@ public class MarketController {
             `forceRefresh=true` to always bypass the cache."""
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Market data"),
+        @ApiResponse(responseCode = "200", description = "Market data",
+                     content = @Content(mediaType = "application/json", schema = @Schema(implementation = Market.class))),
         @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
         @ApiResponse(responseCode = "401", description = "Not cached and caller is anonymous, or auth-service says a presented token is not active",
                      content = @Content),
@@ -71,7 +74,8 @@ public class MarketController {
         description = "Force-fetches market data from SpaceTraders and updates the local cache."
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Updated market data"),
+        @ApiResponse(responseCode = "200", description = "Updated market data",
+                     content = @Content(mediaType = "application/json", schema = @Schema(implementation = Market.class))),
         @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
         @ApiResponse(responseCode = "401", description = "No bearer token, or auth-service says the presented one is not active", content = @Content),
         @ApiResponse(responseCode = "403", description = "A verified session without the universe:refresh scope", content = @Content),
