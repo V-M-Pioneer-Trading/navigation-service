@@ -24,6 +24,11 @@ import java.util.List;
  *   <li>Tags are sorted by name. springdoc lists them in handler registration order, which
  *       nothing promises; every map in the document is already sorted by key
  *       ({@code springdoc.writer-with-order-by-keys}).</li>
+ *   <li>Every component schema that declares properties is marked
+ *       {@code additionalProperties: true}. The records in {@code api.schema} document bodies the
+ *       service passes through unvalidated, so they must read as open: a consumer's generated
+ *       client must not reject a field upstream added. springdoc 2.7.0 drops
+ *       {@code @Schema(additionalProperties = TRUE)} under OAS 3.0.1, hence this customizer.</li>
  * </ul>
  */
 @Configuration
@@ -46,6 +51,20 @@ public class OpenApiConfig {
             if (tags != null) {
                 tags.sort(Comparator.comparing(Tag::getName));
             }
+        };
+    }
+
+    @Bean
+    public OpenApiCustomizer openBodyModels() {
+        return openApi -> {
+            if (openApi.getComponents() == null || openApi.getComponents().getSchemas() == null) {
+                return;
+            }
+            openApi.getComponents().getSchemas().values().forEach(schema -> {
+                if (schema.getProperties() != null && schema.getAdditionalProperties() == null) {
+                    schema.setAdditionalProperties(true);
+                }
+            });
         };
     }
 }

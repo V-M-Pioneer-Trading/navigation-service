@@ -28,6 +28,7 @@ build-script change working on both.
 | `NavigationServiceApplication` | Boot entry point; registers `SqliteDirectoryInitializer` | `config` |
 | `api/WaypointController` | Waypoint and system routes, each declaring its credential requirement; receives the verified `Session` (or null) and the raw `Authorization` header to forward | `service`, `auth`, `introspection.web` (annotations) |
 | `api/MarketController`, `api/ShipyardController` | Their two routes each | same |
+| `api/schema/*` | Doc-only records (`Waypoint`, `SystemWaypointsResponse`, `Market`, `Shipyard` and their members) that type the 200 bodies in the spec. No runtime code reads them; handlers still return `JsonNode`/`Map`, so the bytes on the wire do not change. They may lag upstream SpaceTraders 2.3.0 | springdoc annotations |
 | `api/HealthController` | `/health` and `/api/navigation/health`, `@IgnoreCredentials` | `introspection.web` (annotation) |
 | `auth/Session`, `auth/Scopes`, `auth/CallerAttributes` | The verified identity handed to controllers (subject, the center's `kind`, scopes); the scope literals; the two request-attribute names | — |
 | `introspection/AccessPolicy`, `Requirement`, `Bearer`, `SafeMethods`, `Rejection` | The rules of token-introspection.md: rule order, what a bearer token is, the five answers. Pure | — |
@@ -47,7 +48,7 @@ build-script change working on both.
 | `config/CorsConfig` | Browser access to `/api/**` | — |
 | `config/IntrospectionConfig` | Wires the client from `AUTH_INTROSPECTION_URL` / `_SECRET` (refuses to start without either), installs the interceptor on every path, registers the audit. A `WebMvcConfigurer`, so every `@WebMvcTest` slice gets it | `introspection` |
 | `config/SqliteDirectoryInitializer` | Creating the database directory before the pool opens | — |
-| `config/OpenApiConfig` | The spec's info, its one server (`/`), and sorted tags, so `openapi.json` is reproducible | springdoc |
+| `config/OpenApiConfig` | The spec's info, its one server (`/`), sorted tags, and `additionalProperties: true` on every component schema with properties (springdoc drops the annotation form), so `openapi.json` is reproducible and the typed bodies stay open | springdoc |
 
 ### Dependency rules
 
@@ -243,7 +244,7 @@ Notes that will save time:
 - **`MockRestServiceServer` expectations are ordered.** A pagination test must declare
   `page=1` before `page=2`, and the full URL including query string has to match.
 
-No flaky test is currently known. The suite was at 380 tests (19 of them the skipped
+No flaky test is currently known. The suite was at 384 tests (19 of them the skipped
 st-gateway fixture cases) when this file was last updated.
 
 ## Extension conventions
@@ -265,7 +266,11 @@ st-gateway fixture cases) when this file was last updated.
   more", `@IgnoreCredentials` only for health-and-docs-shaped routes that never read
   identity. The application will not start without it. Add a line to the README's route
   table and a `RouteAuthorizationTest` case, and run `./gradlew openapi` (any route or
-  `@Operation` change moves the committed spec; CI fails until it is regenerated).
+  `@Operation` change moves the committed spec; CI fails until it is regenerated). A route
+  with a body gets a typed 200: `content = @Content(mediaType = "application/json", schema =
+  @Schema(implementation = X.class))` with `X` a record in `api/schema`, and a line in
+  `OpenApiBodiesTest`'s route list (the test fails on any `/api/navigation/v1` operation it
+  does not know, and on a free-form body).
 - **A new framework-owned handler** (a library contributing its own controller): declare it
   by type in `introspection/web/Declarations`, with the reason, and cover it in
   `ServedApplicationAuthorizationTest`. Never widen a rule to "anything not ours is public".

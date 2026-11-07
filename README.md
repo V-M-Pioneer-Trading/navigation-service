@@ -349,6 +349,11 @@ output is the same bytes on Windows and Linux: keys sorted
 (`OpenApiConfig`), LF line endings with a trailing newline (`.gitattributes` keeps a
 Windows checkout LF too).
 
+The 200 bodies of the waypoint, system-listing, market and shipyard routes (refresh POSTs
+included) are typed `application/json` models from `api/schema`, open
+(`additionalProperties: true`) and documentation only: the routes still pass the upstream
+object through unchanged. `OpenApiBodiesTest` fails if one of them goes back to free-form.
+
 CI's `test` job regenerates it on every pull request and push and fails if
 `git diff openapi.json` shows anything, so a change to a route or an annotation commits
 the regenerated file in the same PR. Pushes to main also sync it to meta's

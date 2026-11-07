@@ -76,12 +76,9 @@
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object"
-                  }
+                  "$ref": "#/components/schemas/SystemWaypointsResponse"
                 }
               }
             },
@@ -133,12 +130,9 @@
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object"
-                  }
+                  "$ref": "#/components/schemas/SystemWaypointsResponse"
                 }
               }
             },
@@ -200,9 +194,9 @@
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonNode"
+                  "$ref": "#/components/schemas/Waypoint"
                 }
               }
             },
@@ -264,9 +258,9 @@
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonNode"
+                  "$ref": "#/components/schemas/Market"
                 }
               }
             },
@@ -318,9 +312,9 @@
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonNode"
+                  "$ref": "#/components/schemas/Market"
                 }
               }
             },
@@ -375,9 +369,9 @@
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonNode"
+                  "$ref": "#/components/schemas/Waypoint"
                 }
               }
             },
@@ -442,9 +436,9 @@
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonNode"
+                  "$ref": "#/components/schemas/Shipyard"
                 }
               }
             },
@@ -496,9 +490,9 @@
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonNode"
+                  "$ref": "#/components/schemas/Shipyard"
                 }
               }
             },
@@ -561,8 +555,237 @@
   },
   "components": {
     "schemas": {
-      "JsonNode": {
-        "type": "object"
+      "Market": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "exchange": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TradeGood"
+            }
+          },
+          "exports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TradeGood"
+            }
+          },
+          "imports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TradeGood"
+            }
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "tradeGoods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarketTradeGood"
+            }
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "MarketTradeGood": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "activity": {
+            "type": "string"
+          },
+          "purchasePrice": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sellPrice": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "supply": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "tradeVolume": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "purchasePrice",
+          "sellPrice",
+          "symbol"
+        ]
+      },
+      "Shipyard": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "modificationsFee": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "shipTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShipyardShipType"
+            }
+          },
+          "ships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShipyardShip"
+            }
+          },
+          "symbol": {
+            "type": "string"
+          }
+        }
+      },
+      "ShipyardShip": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "activity": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "purchasePrice": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "supply": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "purchasePrice",
+          "type"
+        ]
+      },
+      "ShipyardShipType": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "SystemWaypointsResponse": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Waypoint"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "data",
+          "total"
+        ]
+      },
+      "TradeGood": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          }
+        }
+      },
+      "Waypoint": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "isUnderConstruction": {
+            "type": "boolean"
+          },
+          "orbits": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "systemSymbol": {
+            "type": "string"
+          },
+          "traits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WaypointTrait"
+            }
+          },
+          "type": {
+            "type": "string"
+          },
+          "x": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "y": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "symbol",
+          "traits",
+          "type",
+          "x",
+          "y"
+        ]
+      },
+      "WaypointTrait": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol"
+        ]
       }
     }
   }

@@ -9,7 +9,10 @@ import de.vnm.navigation.introspection.web.RequireScope;
 import de.vnm.navigation.service.WaypointService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import de.vnm.navigation.api.schema.Waypoint;
+import de.vnm.navigation.api.schema.SystemWaypointsResponse;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -49,7 +52,8 @@ public class WaypointController {
             on first miss. Use `forceRefresh=true` to bypass the cache."""
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Waypoint data"),
+        @ApiResponse(responseCode = "200", description = "Waypoint data",
+                     content = @Content(mediaType = "application/json", schema = @Schema(implementation = Waypoint.class))),
         @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
         @ApiResponse(responseCode = "401", description = "Not cached and caller is anonymous, or auth-service says a presented token is not active",
                      content = @Content),
@@ -86,7 +90,8 @@ public class WaypointController {
         description = "Force-fetches the waypoint from SpaceTraders and updates the local cache."
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Updated waypoint data"),
+        @ApiResponse(responseCode = "200", description = "Updated waypoint data",
+                     content = @Content(mediaType = "application/json", schema = @Schema(implementation = Waypoint.class))),
         @ApiResponse(responseCode = "400", description = "Malformed waypoint symbol", content = @Content),
         @ApiResponse(responseCode = "401", description = "No bearer token, or auth-service says the presented one is not active", content = @Content),
         @ApiResponse(responseCode = "403", description = "A verified session without the universe:refresh scope", content = @Content),
@@ -125,7 +130,8 @@ public class WaypointController {
             Use `forceRefresh=true` to re-walk the system."""
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "List of waypoints"),
+        @ApiResponse(responseCode = "200", description = "List of waypoints",
+                     content = @Content(mediaType = "application/json", schema = @Schema(implementation = SystemWaypointsResponse.class))),
         @ApiResponse(responseCode = "400", description = "Malformed system symbol", content = @Content),
         @ApiResponse(responseCode = "401", description = "Not cached and caller is anonymous, or auth-service says a presented token is not active",
                      content = @Content),
@@ -161,7 +167,8 @@ public class WaypointController {
         description = "Force-fetches all waypoints for a system from SpaceTraders and replaces the local cache."
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Updated list of waypoints"),
+        @ApiResponse(responseCode = "200", description = "Updated list of waypoints",
+                     content = @Content(mediaType = "application/json", schema = @Schema(implementation = SystemWaypointsResponse.class))),
         @ApiResponse(responseCode = "400", description = "Malformed system symbol", content = @Content),
         @ApiResponse(responseCode = "401", description = "No bearer token, or auth-service says the presented one is not active", content = @Content),
         @ApiResponse(responseCode = "403", description = "A verified session without the universe:refresh scope", content = @Content),
